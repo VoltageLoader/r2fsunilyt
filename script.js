@@ -1,4 +1,6 @@
+// 🔍 SMART SEARCH (image + text + tags)
 function searchApp() {
+
     let input = document.getElementById('search').value.toLowerCase().trim();
     let keywords = input.split(" ");
     let cards = document.getElementsByClassName('card');
@@ -7,8 +9,9 @@ function searchApp() {
 
         let title = cards[i].getElementsByTagName("h2")[0].innerText.toLowerCase();
         let desc = cards[i].getElementsByTagName("p")[0].innerText.toLowerCase();
+        let img = cards[i].getElementsByTagName("img")[0].alt.toLowerCase();
 
-        let fullText = title + " " + desc;
+        let fullText = title + " " + desc + " " + img;
 
         let match = true;
 
@@ -24,22 +27,27 @@ function searchApp() {
 }
 
 
-// ⭐ rating system
-let stars = document.querySelectorAll(".rating span");
+// ⭐ RATING SYSTEM
+document.addEventListener("DOMContentLoaded", () => {
 
-stars.forEach(star => {
-    star.addEventListener("click", () => {
+    let stars = document.querySelectorAll(".rating span");
 
-        let value = star.getAttribute("data-value");
-        let parent = star.parentElement;
-        let all = parent.querySelectorAll("span");
+    stars.forEach(star => {
+        star.addEventListener("click", () => {
 
-        all.forEach(s => s.classList.remove("active"));
+            let value = star.getAttribute("data-value");
 
-        for (let i = 0; i < value; i++) {
-            all[i].classList.add("active");
-        }
+            let parent = star.parentElement;
+            let all = parent.querySelectorAll("span");
 
-        alert("You rated " + value + " stars ⭐");
+            all.forEach(s => s.classList.remove("active"));
+
+            for (let i = 0; i < value; i++) {
+                all[i].classList.add("active");
+            }
+
+            alert("⭐ You rated " + value + " stars");
+        });
     });
+
 });
