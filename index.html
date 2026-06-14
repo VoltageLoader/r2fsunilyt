@@ -9,19 +9,17 @@
 
 <body>
 
-<h1> VOLTAGE OFFICIAL STORE</h1></h1>
+<h1> VOLTAGE OFFICIAL STORE</h1>
 <p>VOLTAGE LOADER & MOD APK + OBB FILES</p>
 
-<!-- SEARCH -->
 <input type="text" id="search" placeholder="Search APK..." onkeyup="searchApp()">
 
 <div class="container">
 
-    <!-- CARD 1 -->
     <div class="card">
 
         <div class="card-left">
-            <img src="images/voltage.png">
+            <img src="images/voltage.png" id="img-card-1">
 
             <div class="rating">
                 <span class="active">★</span>
@@ -33,23 +31,25 @@
         </div>
 
         <div class="card-info">
-            <h2>Voltage Loader</h2>
+            <h2 id="title-card-1">Voltage Loader</h2>
             <div class="version">Version 4.4 | Android APK</div>
         </div>
 
         <div class="card-buttons">
-            <a class="btn download" href="https://github.com/VoltageLoader/Voltage/raw/refs/heads/main/libRS.so">DOWNLOAD</a>
+            <a class="btn download" href="javascript:void(0);" onclick="startDownload(this, 'https://github.com/VoltageLoader/Voltage/raw/refs/heads/main/libRS.so', 'title-card-1', 'img-card-1')">
+                <span class="progress-fill"></span>
+                <span class="btn-text">DOWNLOAD</span>
+            </a>
             <a class="btn contact" href="https://t.me/voltageloader">CONTACT US..</a>
         </div>
 
     </div>
 
 
-    <!-- CARD 2 -->
     <div class="card">
 
         <div class="card-left">
-            <img src="images/bgmi.png">
+            <img src="images/bgmi.png" id="img-card-2">
 
             <div class="rating">
                 <span class="active">★</span>
@@ -61,12 +61,15 @@
         </div>
 
         <div class="card-info">
-            <h2>BGMI MOD APK</h2>
+            <h2 id="title-card-2">BGMI MOD APK</h2>
             <div class="version">Voltage Ultra Power | Latest Update</div>
         </div>
 
         <div class="card-buttons">
-            <a class="btn download" href="https://t.me/voltageloader">DOWNLOAD</a>
+            <a class="btn download" href="javascript:void(0);" onclick="startDownload(this, 'https://t.me/voltageloader', 'title-card-2', 'img-card-2')">
+                <span class="progress-fill"></span>
+                <span class="btn-text">DOWNLOAD</span>
+            </a>
             <a class="btn contact" href="https://t.me/voltageloader">CONTACT US..</a>
         </div>
 
@@ -74,7 +77,83 @@
 
 </div>
 
+<div class="popup-overlay" id="installPopupOverlay">
+    <div class="install-popup">
+        <div class="popup-header">
+            <img src="" id="popupAppIcon" alt="App Icon">
+            <div>
+                <h3 id="popupAppName">App Name</h3>
+                <p>Do you want to install this application?</p>
+            </div>
+        </div>
+        <div class="popup-body">
+            It does not require any special access. Click install to proceed.
+        </div>
+        <div class="popup-actions">
+            <button class="popup-btn cancel" onclick="closePopup()">Cancel</button>
+            <button class="popup-btn" id="popupInstallBtn" onclick="triggerActualDownload()">Install</button>
+        </div>
+    </div>
+</div>
+
 <script src="script.js"></script>
+
+<script>
+let globalDownloadUrl = "";
+
+function startDownload(element, downloadUrl, titleId, imgId) {
+    if(element.classList.contains('downloading')) return;
+    
+    element.classList.add('downloading');
+    globalDownloadUrl = downloadUrl; 
+    
+    const progressFill = element.querySelector('.progress-fill');
+    const btnText = element.querySelector('.btn-text');
+    const appName = document.getElementById(titleId).innerText;
+    const appIcon = document.getElementById(imgId).src;
+    
+    let progress = 0;
+    element.style.background = "#222"; 
+    element.style.color = "#fff";
+    
+    const interval = setInterval(() => {
+        progress += Math.floor(Math.random() * 6) + 2; 
+        if (progress > 100) progress = 100;
+        
+        if(progressFill) progressFill.style.width = progress + "%";
+        if(btnText) btnText.innerText = progress + "%";
+        
+        if (progress === 100) {
+            clearInterval(interval);
+            
+            setTimeout(() => {
+                if(progressFill) progressFill.style.width = "0%";
+                if(btnText) btnText.innerText = "DOWNLOAD";
+                element.style.background = "#00ff00";
+                element.style.color = "black";
+                element.classList.remove('downloading');
+                
+                openInstallPopup(appName, appIcon);
+            }, 400);
+        }
+    }, 120); 
+}
+
+function openInstallPopup(name, iconSrc) {
+    document.getElementById('popupAppName').innerText = name;
+    document.getElementById('popupAppIcon').src = iconSrc;
+    document.getElementById('installPopupOverlay').classList.add('show');
+}
+
+function closePopup() {
+    document.getElementById('installPopupOverlay').classList.remove('show');
+}
+
+function triggerActualDownload() {
+    closePopup();
+    window.location.href = globalDownloadUrl;
+}
+</script>
 
 </body>
 </html>
