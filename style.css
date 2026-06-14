@@ -1,5 +1,5 @@
 /* =========================
-   GLOBAL STYLES
+   GLOBAL STYLE
 ========================= */
 body {
     margin: 0;
@@ -21,7 +21,7 @@ p {
     font-size: 0.85rem;
 }
 
-/* SEARCH BOX */
+/* SEARCH */
 input {
     padding: 10px;
     width: 80%;
@@ -44,14 +44,13 @@ input {
 }
 
 /* =========================
-   CARD (MAIN DESIGN)
+   CARD DESIGN
 ========================= */
 .card {
     background: #1c1c1c;
-
     width: 95%;
-    max-width: 650px;   /* LONG CARD */
-    height: 120px;      /* COMPACT HEIGHT */
+    max-width: 650px;
+    height: 120px;
 
     display: flex;
     align-items: center;
@@ -70,7 +69,7 @@ input {
 }
 
 /* =========================
-   LEFT SIDE (LOGO + STARS)
+   LEFT SIDE
 ========================= */
 .card-left {
     width: 85px;
@@ -86,7 +85,6 @@ input {
     object-fit: cover;
 }
 
-/* STARS */
 .rating {
     font-size: 11px;
     margin-top: 4px;
@@ -101,7 +99,7 @@ input {
 }
 
 /* =========================
-   MIDDLE (NAME + VERSION)
+   MIDDLE
 ========================= */
 .card-info {
     flex: 1;
@@ -109,16 +107,13 @@ input {
     padding: 0 10px;
 }
 
-/* APK NAME */
 .card-info h2 {
     font-size: 0.85rem;
     margin: 0;
     color: white;
     font-weight: bold;
-    line-height: 1.2;
 }
 
-/* VERSION */
 .version {
     font-size: 0.7rem;
     color: #00ffcc;
@@ -126,7 +121,7 @@ input {
 }
 
 /* =========================
-   RIGHT SIDE (BUTTONS)
+   RIGHT SIDE
 ========================= */
 .card-buttons {
     display: flex;
@@ -135,7 +130,7 @@ input {
     width: 110px;
 }
 
-/* BUTTON BASE */
+/* BUTTONS */
 .btn {
     padding: 7px;
     border-radius: 6px;
@@ -146,26 +141,68 @@ input {
     transition: 0.3s ease;
 }
 
-/* DOWNLOAD BUTTON */
+/* DOWNLOAD */
 .download {
     background: #00ff00;
     color: black;
-    box-shadow: 0 0 8px rgba(0,255,0,0.3);
 }
 
-.download:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 15px #00ff00;
-}
-
-/* CONTACT BUTTON */
+/* CONTACT */
 .contact {
     background: #9900ff;
     color: white;
-    box-shadow: 0 0 8px rgba(153,0,255,0.3);
 }
 
-.contact:hover {
+/* HOVER */
+.download:hover, .contact:hover {
     transform: scale(1.05);
-    box-shadow: 0 0 15px #9900ff;
+}
+
+/* =========================
+   MOBILE RESPONSIVE FIX
+========================= */
+@media (max-width: 600px) {
+
+    .card {
+        height: auto;
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .card-left img {
+        width: 55px;
+        height: 55px;
+    }
+
+    .rating {
+        font-size: 10px;
+    }
+
+    .card-info h2 {
+        font-size: 0.78rem;
+    }
+
+    .version {
+        font-size: 0.65rem;
+    }
+
+    .card-buttons {
+        flex-direction: row;
+        width: auto;
+        gap: 6px;
+    }
+
+    .btn {
+        font-size: 9px;
+        padding: 6px 8px;
+        white-space: nowrap;
+    }
+
+    input {
+        width: 90%;
+    }
+
+    h1 {
+        font-size: 1.3rem;
+    }
 }
