@@ -36,7 +36,7 @@ input::placeholder {
     color: #888;
 }
 
-/* Container - Isme cards ek ke niche ek layout mein set rahenge */
+/* Container */
 .container {
     display: flex;
     flex-direction: column; 
@@ -47,67 +47,46 @@ input::placeholder {
     box-sizing: border-box;
 }
 
-/* --- LANDSCAPE STYLE CARD (WIDESCREEN FORMAT) --- */
+/* --- UPDATED CARD STYLE --- */
 .card {
     background: #1c1c1c;
     border-radius: 12px;
     width: 95%;            
-    max-width: 600px;      /* Card ki width badha kar widescreen landscape kiya */
-    height: 140px;         /* Ek standard horizontal height set ki */
+    max-width: 600px;      
+    height: 130px;         /* Height ko thoda optimize kiya hai */
     box-sizing: border-box;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-    overflow: hidden;      /* Takki left side ki image borders se bahar na nikle */
+    overflow: hidden;      
     
-    /* Content ko left-to-right alignment dene ke liye */
     display: flex;
     align-items: center;
-    text-align: left;      
+    justify-content: space-between; /* Left, Middle aur Right sections me balance ke liye */
+    padding: 10px 15px;
 }
 
-/* Image - Landscape Banner Look */
-.card img {
-    width: 160px;          /* Width ko badhakar banner jaisa shape diya */
-    height: 100%;          /* Card ki poori height use karega */
-    object-fit: cover;
-    border-radius: 12px 0 0 12px; /* Sirf left side ke corners rounded rahenge */
-    margin: 0;     
-}
-
-/* Card Content Info Wrapper (Text space) */
-.card-info {
-    flex: 1;              
+/* Left Section: Logo + Rating Combo */
+.card-left {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 0 15px;       /* Text ke left aur right mein barabar space */
+    align-items: center;
+    justify-content: center;
+    min-width: 90px; /* Thoda explicit space taaki layout hile na */
 }
 
-/* Card Headings */
-.card h2 {
-    font-size: 1.1rem;     
-    color: #ffffff;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* Logo Chota kiya gaya hai */
+.card img {
+    width: 75px;          
+    height: 75px;          
+    object-fit: cover;
+    border-radius: 12px; 
+    margin-bottom: 5px;     
 }
 
-/* Card Paragraph */
-.card p {
-    font-size: 0.8rem;
-    margin: 0;
-    color: #aaa;
-    display: -webkit-box;
-    -webkit-line-clamp: 2; /* Agar text bada ho toh automatically 2 line ke baad dots (...) aa jayenge */
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-/* --- RATING STARS (GREEN) --- */
+/* --- RATING STARS (LOGO KE NICHE) --- */
 .rating {
-    font-size: 12px;
+    font-size: 11px;
     cursor: pointer;
-    margin: 2px 0;
+    text-align: center;
 }
 
 .rating span {
@@ -119,20 +98,49 @@ input::placeholder {
     text-shadow: 0 0 5px rgba(0, 255, 204, 0.6);
 }
 
-/* Wrapper for buttons - Right side mein level karne ke liye */
+/* Middle Section: APK Name aur Version (Logo ke aage) */
+.card-info {
+    flex: 1;              
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 15px;       
+    text-align: left;
+}
+
+/* APK Name */
+.card h2 {
+    font-size: 1.2rem;     
+    color: #ffffff;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* APK Version */
+.card p {
+    font-size: 0.85rem;
+    margin: 0;
+    color: #00ffcc; /* Version ko thoda clean highlight dene ke liye */
+    font-weight: 500;
+}
+
+/* Right Section: Buttons (Download upar, Contact neeche) */
 .card-buttons {
     display: flex;
     flex-direction: column; 
     gap: 8px;
-    padding-right: 15px;   
     justify-content: center;
+    align-items: stretch; /* Taki dono buttons barabar width ke dikhein */
+    min-width: 110px;
 }
 
 /* --- ANIMATED BUTTONS WITH GLOW EFFECT --- */
 .btn {
     display: block;
-    padding: 8px 14px;     /* Button size ko thoda standard kiya click karne ke liye */
-    margin: 0;
+    padding: 8px 12px;     
     border-radius: 6px;
     text-decoration: none;
     font-weight: bold;
@@ -143,7 +151,7 @@ input::placeholder {
     text-align: center;
 }
 
-/* DOWNLOAD BUTTON (Lime Green) */
+/* DOWNLOAD BUTTON (Top) */
 .download {
     background: #00ff00;
     color: black;
@@ -154,4 +162,17 @@ input::placeholder {
     transform: scale(1.05);
     background: #26ff26;
     box-shadow: 0 0 15px #00ff00, 0 0 25px rgba(0, 255, 0, 0.6);
+}
+
+/* CONTACT BUTTON (Bottom) */
+.contact {
+    background: #9900ff;
+    color: white;
+    box-shadow: 0 0 8px rgba(153, 0, 255, 0.4);
+}
+
+.contact:hover {
+    transform: scale(1.05);
+    background: #ad33ff;
+    box-shadow: 0 0 15px #9900ff, 0 0 25px rgba(153, 0, 255, 0.6);
 }
