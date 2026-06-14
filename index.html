@@ -1,70 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>APK Download Hub</title>
+/* --- ANIMATED BUTTONS WITH GLOW EFFECT --- */
 
-<link rel="stylesheet" href="style.css">
-</head>
+.btn {
+    display: block;
+    padding: 7px 4px; /* छोटे कार्ड के लिए परफेक्ट पैडिंग */
+    margin: 8px auto;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    transition: all 0.3s ease; /* हर बदलाव को स्मूथ बनाने के लिए */
+    position: relative;
+    overflow: hidden;
+}
 
-<body>
+/* ⬇ DOWNLOAD BUTTON (Lime Green Glow) */
+.download {
+    background: #00ff00;
+    color: black;
+    /* लगातार दिखने वाला हल्का ग्लो */
+    box-shadow: 0 0 8px rgba(0, 255, 0, 0.4); 
+}
 
-<h1>📱 APK Download Hub</h1>
-<p>VOLTAGE LOADER & MOD APK + OBB Files</p>
+/* जब यूजर Download बटन पर माउस लाएगा या क्लिक करेगा */
+.download:hover {
+    transform: scale(1.05); /* बटन थोड़ा बड़ा होगा */
+    background: #26ff26;
+    /* ग्लो इफ़ेक्ट और तेज़ हो जाएगा */
+    box-shadow: 0 0 15px #00ff00, 0 0 25px rgba(0, 255, 0, 0.6);
+}
 
-<!-- 🔍 SEARCH -->
-<input type="text" id="search" placeholder="Search 🔍 Voltage Loader" onkeyup="searchApp()">
+/* 📢 TELEGRAM BUTTON (Deep Pink Glow) */
+.telegram {
+    background: #ff1493;
+    color: white;
+    /* लगातार दिखने वाला हल्का ग्लो */
+    box-shadow: 0 0 8px rgba(255, 20, 147, 0.4);
+    animation: pulseGlow 2s infinite; /* टेलीग्राम बटन पर ऑटोमैटिक धड़कने वाला एनीमेशन */
+}
 
-<div class="container">
+/* जब यूजर Telegram बटन पर माउस लाएगा */
+.telegram:hover {
+    transform: scale(1.05); /* बटन थोड़ा बड़ा होगा */
+    background: #ff33a3;
+    /* ग्लो इफ़ेक्ट और तेज़ हो जाएगा */
+    box-shadow: 0 0 15px #ff1493, 0 0 25px rgba(255, 20, 147, 0.6);
+}
 
-<!-- ⭐ APP CARD 1 (Voltage Loader) -->
-<div class="card">
+/* बटन के दबने का इफ़ेक्ट */
+.btn:active {
+    transform: scale(0.98);
+}
 
-    <img src="images/voltage.png" alt="Voltage Loader">
 
-    <h2>Voltage Loader</h2>
-    <p>Latest Version 4.4 | Android APK</p>
-
-    <!-- यहाँ सभी 5 स्टार्स पर 'active' क्लास दी है (5 Star Rating) -->
-    <div class="rating">
-        <span data-value="1" class="active">★</span>
-        <span data-value="2" class="active">★</span>
-        <span data-value="3" class="active">★</span>
-        <span data-value="4" class="active">★</span>
-        <span data-value="5" class="active">★</span>
-    </div>
-
-    <a class="btn download" href="https://t.me/voltageloader">⬇ DOWNLOAD NOW</a>
-    <a class="btn telegram" href="https://t.me/voltageloader">CONTACT TO BUY VIP KEY </a>
-
-</div>
-
-<!-- ⭐ APP CARD 2 (BGMI) -->
-<div class="card">
-
-    <img src="images/bgmi.png" alt="BGMI">
-
-    <h2>BGMI MOD APK 4.4</h2>
-    <p>Voltage [Ultra Power] |Latest Update</p>
-
-    <!-- यहाँ शुरुआत के 4 स्टार्स पर 'active' क्लास दी है (4 Star Rating) -->
-    <div class="rating">
-        <span data-value="1" class="active">★</span>
-        <span data-value="2" class="active">★</span>
-        <span data-value="3" class="active">★</span>
-        <span data-value="4" class="active">★</span>
-        <span data-value="5">★</span>
-    </div>
-
-    <a class="btn download" href="https://t.me/voltageloader">⬇ DOWNLOAD NOW</a>
-    <a class="btn telegram" href="https://t.me/voltageloader">CONTACT TO BUY VIP KEY</a>
-
-</div>
-
-</div>
-
-<script src="script.js"></script>
-
-</body>
-</html>
+/* --- ANIMATION KEYFRAMES --- */
+/* यह एनीमेशन Telegram बटन को बिना माउस ले जाए भी धीरे-धीरे ग्लो (Pulse) कराता रहेगा */
+@keyframes pulseGlow {
+    0% {
+        box-sizing: border-box;
+        box-shadow: 0 0 8px rgba(255, 20, 147, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 14px rgba(255, 20, 147, 0.8);
+    }
+    100% {
+        box-shadow: 0 0 8px rgba(255, 20, 147, 0.4);
+    }
+}
