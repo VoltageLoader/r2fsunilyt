@@ -1,20 +1,25 @@
+/* --- GLOBAL --- */
 body {
     margin: 0;
-    font-family: Arial;
+    font-family: Arial, sans-serif;
     background: #0f0f0f;
     color: white;
     text-align: center;
 }
 
+/* TITLE */
 h1 {
     color: #00ffcc;
     margin-top: 20px;
+    font-size: 1.8rem;
 }
 
 p {
     color: #aaa;
+    font-size: 0.9rem;
 }
 
+/* SEARCH */
 input {
     padding: 10px;
     width: 80%;
@@ -24,6 +29,7 @@ input {
     border: none;
     background: #222;
     color: white;
+    outline: none;
 }
 
 /* CONTAINER */
@@ -35,23 +41,25 @@ input {
     padding: 15px;
 }
 
-/* CARD */
+/* ================= CARD ================= */
 .card {
     background: #1c1c1c;
     width: 95%;
     max-width: 600px;
     height: 140px;
-    border-radius: 12px;
 
     display: flex;
     justify-content: space-between;
     align-items: center;
 
     padding: 10px 15px;
+    border-radius: 12px;
     box-sizing: border-box;
+
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* LEFT */
+/* LEFT (LOGO + STARS) */
 .card-left {
     width: 90px;
     display: flex;
@@ -66,6 +74,7 @@ input {
     object-fit: cover;
 }
 
+/* STARS */
 .rating {
     font-size: 12px;
     margin-top: 5px;
@@ -79,25 +88,31 @@ input {
     color: #00ffcc;
 }
 
-/* MIDDLE */
+/* MIDDLE (NAME + VERSION SAME LINE) */
 .card-info {
     flex: 1;
     text-align: left;
-    padding: 0 15px;
+    padding: 0 12px;
 }
 
+/* APK NAME */
 .card-info h2 {
+    display: inline;
+    font-size: 0.95rem;
     margin: 0;
-    font-size: 1.2rem;
+    color: white;
+    font-weight: bold;
 }
 
+/* VERSION (SMALL INLINE) */
 .version {
-    font-size: 0.85rem;
+    display: inline;
+    font-size: 0.75rem;
     color: #00ffcc;
-    margin-top: 5px;
+    margin-left: 6px;
 }
 
-/* RIGHT */
+/* RIGHT BUTTONS */
 .card-buttons {
     display: flex;
     flex-direction: column;
@@ -105,14 +120,15 @@ input {
     width: 120px;
 }
 
-/* BUTTONS */
+/* BUTTON STYLE */
 .btn {
     padding: 8px;
     border-radius: 6px;
     text-decoration: none;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
     text-align: center;
+    transition: 0.3s;
 }
 
 /* DOWNLOAD */
@@ -121,8 +137,18 @@ input {
     color: black;
 }
 
+.download:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px #00ff00;
+}
+
 /* CONTACT */
 .contact {
     background: #9900ff;
     color: white;
+}
+
+.contact:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 10px #9900ff;
 }
