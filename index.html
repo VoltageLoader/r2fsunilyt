@@ -1,81 +1,144 @@
-<!DOCTYPE html> 
-<html lang="en"> 
-<head> 
-    <meta charset="UTF-8"> 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
-    <title>BGMI 4.5 64 BIT APK + OBB Download</title> 
-    <style> 
-        body { 
-            margin: 0; 
-            font-family: Arial, sans-serif; 
-            background: #0f0f0f; 
-            color: white; 
-            text-align: center; 
-        } 
-        .container { 
-            margin-top: 80px; 
-        } 
-        h1 { 
-            color: #00ffcc; 
-            font-size: 32px; 
-        } 
-        p { 
-            color: #aaa; 
-            margin-bottom: 30px; 
-        } 
-        .btn { 
-            display: inline-block; 
-            padding: 15px 25px; 
-            margin: 10px; 
-            border-radius: 10px; 
-            text-decoration: none; 
-            font-weight: bold; 
-            transition: 0.3s; 
-        } 
-        .download { 
-            background: #00ffcc; 
-            color: black; 
-        } 
-        .download:hover { 
-            background: #00c9a3; 
-        } 
-        .telegram { 
-            background: #229ED9; 
-            color: white; 
-        } 
-        .telegram:hover { 
-            background: #1b7fb3; 
-        } 
-        .card { 
-            background: #1c1c1c; 
-            padding: 25px; 
-            margin: 20px; 
-            border-radius: 15px; 
-            display: inline-block; 
-        } 
-    </style> 
-</head> 
-<body> 
-    <div class="container"> 
-        <!-- मुख्य हेडिंग को BGMI 4.5 64 BIT APK + OBB किया गया -->
-        <h1>BGMI 4.5 64 BIT APK + OBB</h1> 
-        <p>Latest Version Available for Download</p> 
-        
-        <div class="card"> 
-            <!-- वर्शन 4.5 और साइज को पूरे डेटा (APK + OBB) के हिसाब से 1.4 GB किया -->
-            <h2>Version 4.5 (64 BIT)</h2> 
-            <p>Total Size: ~1.4 GB</p> 
-            
-            <!-- APK + OBB Download Link --> 
-            <a class="btn download" href="YOUR_APK_OBB_LINK_HERE" target="_blank"> 
-                ⬇ Download APK + OBB 
-            </a> 
-            
-            <!-- Telegram Link --> 
-            <a class="btn telegram" href="YOUR_TELEGRAM_LINK_HERE" target="_blank"> 
-                📢 Join Telegram 
-            </a> 
-        </div> 
-    </div> 
-</body> 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGMI 4.5 64 BIT APK + OBB Download</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f0f0f;
+    color: white;
+    text-align: center;
+}
+
+.container {
+    margin-top: 80px;
+}
+
+h1 {
+    color: #00ffcc;
+    font-size: 32px;
+}
+
+p {
+    color: #aaa;
+    margin-bottom: 30px;
+}
+
+.card {
+    background: #1c1c1c;
+    padding: 25px;
+    margin: 20px;
+    border-radius: 15px;
+    display: inline-block;
+}
+
+/* Buttons */
+.btn {
+    display: inline-block;
+    padding: 15px 25px;
+    margin: 10px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: bold;
+    transition: 0.3s;
+}
+
+.download {
+    background: #00ffcc;
+    color: black;
+}
+
+.download:hover {
+    background: #00c9a3;
+}
+
+.telegram {
+    background: #229ED9;
+    color: white;
+}
+
+.telegram:hover {
+    background: #1b7fb3;
+}
+
+/* ⭐ Rating System */
+.rating {
+    font-size: 25px;
+    cursor: pointer;
+    margin: 15px 0;
+    user-select: none;
+}
+
+.rating span {
+    color: gray;
+    transition: 0.2s;
+}
+
+.rating span.active {
+    color: gold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>BGMI 4.5 64 BIT APK + OBB</h1>
+<p>Latest Version Available for Download</p>
+
+<div class="card">
+
+<h2>Version 4.5 (64 BIT)</h2>
+<p>Total Size: ~1.4 GB</p>
+
+<!-- ⭐ RATING SYSTEM -->
+<div class="rating" id="rating">
+    <span data-value="1">★</span>
+    <span data-value="2">★</span>
+    <span data-value="3">★</span>
+    <span data-value="4">★</span>
+    <span data-value="5">★</span>
+</div>
+
+<!-- Download Button -->
+<a class="btn download" href="https://t.me/VoltageLoader" target="_blank">
+⬇ Download APK + OBB
+</a>
+
+<!-- Telegram Button -->
+<a class="btn telegram" href="https://t.me/VoltageLoader" target="_blank">
+📢 Join Telegram
+</a>
+
+</div>
+
+</div>
+
+<script>
+// ⭐ Rating Logic
+let stars = document.querySelectorAll("#rating span");
+
+stars.forEach(star => {
+    star.addEventListener("click", () => {
+        let value = star.getAttribute("data-value");
+
+        stars.forEach(s => {
+            s.classList.remove("active");
+        });
+
+        for (let i = 0; i < value; i++) {
+            stars[i].classList.add("active");
+        }
+
+        alert("You rated this " + value + " stars ⭐");
+    });
+});
+</script>
+
+</body>
 </html>
