@@ -1,5 +1,5 @@
 /* =========================
-   GLOBAL STYLE
+   GLOBAL STYLE (MOBILE FIRST)
 ========================= */
 body {
     margin: 0;
@@ -12,8 +12,8 @@ body {
 /* TITLE */
 h1 {
     color: #00ffcc;
-    margin-top: 20px;
-    font-size: 1.6rem;
+    margin-top: 18px;
+    font-size: 1.4rem;
 }
 
 p {
@@ -23,13 +23,13 @@ p {
 
 /* SEARCH */
 input {
-    padding: 10px;
-    width: 80%;
-    max-width: 400px;
-    margin: 15px;
-    border-radius: 8px;
+    padding: 12px;
+    width: 92%;
+    max-width: 500px;
+    margin: 12px auto;
+    border-radius: 10px;
     border: none;
-    background: #222;
+    background: #1f1f1f;
     color: white;
     outline: none;
 }
@@ -39,170 +39,118 @@ input {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
-    padding: 15px;
+    gap: 12px;
+    padding: 12px;
 }
 
 /* =========================
-   CARD DESIGN
+   CARD (APP STYLE)
 ========================= */
 .card {
-    background: #1c1c1c;
     width: 95%;
-    max-width: 650px;
-    height: 120px;
+    background: #1b1b1b;
+    border-radius: 14px;
+    padding: 12px;
 
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 12px;
 
-    padding: 10px 15px;
-    border-radius: 12px;
-    box-sizing: border-box;
-
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    transition: 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
 
-.card:hover {
-    transform: scale(1.01);
-}
-
-/* =========================
-   LEFT SIDE
-========================= */
+/* LEFT ICON */
 .card-left {
-    width: 85px;
+    flex: 0 0 60px;
     display: flex;
     flex-direction: column;
     align-items: center;
 }
 
 .card-left img {
-    width: 65px;
-    height: 65px;
-    border-radius: 10px;
+    width: 58px;
+    height: 58px;
+    border-radius: 12px;
     object-fit: cover;
 }
 
 .rating {
-    font-size: 11px;
+    font-size: 10px;
     margin-top: 4px;
-}
-
-.rating span {
-    color: gray;
+    color: #aaa;
 }
 
 .rating span.active {
     color: #00ffcc;
 }
 
-/* =========================
-   MIDDLE
-========================= */
+/* MIDDLE INFO */
 .card-info {
     flex: 1;
     text-align: left;
-    padding: 0 10px;
 }
 
 .card-info h2 {
     font-size: 0.85rem;
     margin: 0;
     color: white;
-    font-weight: bold;
 }
 
 .version {
     font-size: 0.7rem;
     color: #00ffcc;
-    margin-top: 3px;
+    margin-top: 4px;
 }
 
-/* =========================
-   RIGHT SIDE
-========================= */
+/* RIGHT BUTTONS */
 .card-buttons {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    width: 110px;
 }
 
-/* BUTTONS */
+/* BUTTON STYLE */
 .btn {
-    padding: 7px;
-    border-radius: 6px;
+    padding: 7px 10px;
+    border-radius: 8px;
     text-decoration: none;
     font-size: 10px;
     font-weight: bold;
     text-align: center;
-    transition: 0.3s ease;
+    white-space: nowrap;
 }
 
-/* DOWNLOAD */
 .download {
     background: #00ff00;
     color: black;
 }
 
-/* CONTACT */
 .contact {
-    background: #9900ff;
+    background: #7a00ff;
     color: white;
 }
 
-/* HOVER */
-.download:hover, .contact:hover {
-    transform: scale(1.05);
-}
-
 /* =========================
-   MOBILE RESPONSIVE FIX
+   MOBILE FIX (CLEAN STACK)
 ========================= */
 @media (max-width: 600px) {
 
     .card {
-        height: auto;
-        padding: 12px;
-        gap: 10px;
-    }
-
-    .card-left img {
-        width: 55px;
-        height: 55px;
-    }
-
-    .rating {
-        font-size: 10px;
-    }
-
-    .card-info h2 {
-        font-size: 0.78rem;
-    }
-
-    .version {
-        font-size: 0.65rem;
+        width: 96%;
+        padding: 10px;
     }
 
     .card-buttons {
         flex-direction: row;
-        width: auto;
-        gap: 6px;
+        margin-left: auto;
     }
 
     .btn {
         font-size: 9px;
         padding: 6px 8px;
-        white-space: nowrap;
     }
 
-    input {
-        width: 90%;
-    }
-
-    h1 {
-        font-size: 1.3rem;
+    .card-info h2 {
+        font-size: 0.8rem;
     }
 }
