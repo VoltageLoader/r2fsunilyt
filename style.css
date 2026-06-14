@@ -36,54 +36,56 @@ input::placeholder {
     color: #888;
 }
 
-/* Container - अब यह सब कुछ एक के नीचे एक (Column) सेट करेगा */
+/* Container - Isme cards ek ke niche ek layout mein set rahenge */
 .container {
     display: flex;
-    flex-direction: column; /* कार्ड्स को ऊपर-नीचे करने के लिए */
-    align-items: center;    /* सेंटर में रखने के लिए */
-    gap: 12px;
-    padding: 10px;
+    flex-direction: column; 
+    align-items: center;    
+    gap: 15px;
+    padding: 15px;
     width: 100%;
     box-sizing: border-box;
 }
 
-/* --- PLAY STORE STYLE CARD (UPER-NICHE LIST) --- */
+/* --- LANDSCAPE STYLE CARD (WIDESCREEN FORMAT) --- */
 .card {
     background: #1c1c1c;
-    padding: 12px;
     border-radius: 12px;
-    width: 95%;            /* मोबाइल स्क्रीन के हिसाब से पूरी चौड़ाई */
-    max-width: 380px;      /* बड़ी स्क्रीन पर बहुत ज़्यादा फैला हुआ न दिखे */
+    width: 95%;            
+    max-width: 600px;      /* Card ki width badha kar widescreen landscape kiya */
+    height: 140px;         /* Ek standard horizontal height set ki */
     box-sizing: border-box;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    overflow: hidden;      /* Takki left side ki image borders se bahar na nikle */
     
-    /* अंदर के आइटम्स को आमने-सामने (Row) करने के लिए ताकि लेफ्ट में इमेज और राइट में डिटेल्स आएं */
+    /* Content ko left-to-right alignment dene ke liye */
     display: flex;
     align-items: center;
-    text-align: left;      /* टेक्स्ट को लेफ्ट अलाइन किया */
-    gap: 15px;
+    text-align: left;      
 }
 
-/* Image - Play Store जैसा छोटा लोगो */
+/* Image - Landscape Banner Look */
 .card img {
-    width: 70px;          /* इमेज को छोटा करके स्क्वायर लोगो बनाया */
-    height: 70px;
+    width: 160px;          /* Width ko badhakar banner jaisa shape diya */
+    height: 100%;          /* Card ki poori height use karega */
     object-fit: cover;
-    border-radius: 12px;
-    margin-bottom: 0;     /* पुराना मार्जिन हटाया */
+    border-radius: 12px 0 0 12px; /* Sirf left side ke corners rounded rahenge */
+    margin: 0;     
 }
 
-/* Card Content Info Wrapper (नाम, रेटिंग और पैराग्राफ को सहेजने के लिए) */
+/* Card Content Info Wrapper (Text space) */
 .card-info {
-    flex: 1;              /* बची हुई जगह यह हिस्सा लेगा */
+    flex: 1;              
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
+    padding: 0 15px;       /* Text ke left aur right mein barabar space */
 }
 
 /* Card Headings */
 .card h2 {
-    font-size: 1rem;
+    font-size: 1.1rem;     
+    color: #ffffff;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -92,9 +94,13 @@ input::placeholder {
 
 /* Card Paragraph */
 .card p {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     margin: 0;
     color: #aaa;
+    display: -webkit-box;
+    -webkit-line-clamp: 2; /* Agar text bada ho toh automatically 2 line ke baad dots (...) aa jayenge */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 /* --- RATING STARS (GREEN) --- */
@@ -113,23 +119,24 @@ input::placeholder {
     text-shadow: 0 0 5px rgba(0, 255, 204, 0.6);
 }
 
-/* Wrapper for buttons inside the list card */
+/* Wrapper for buttons - Right side mein level karne ke liye */
 .card-buttons {
     display: flex;
-    flex-direction: column; /* बटन्स को एक-दूसरे के ऊपर-नीचे रखने के लिए */
-    gap: 5px;
+    flex-direction: column; 
+    gap: 8px;
+    padding-right: 15px;   
     justify-content: center;
 }
 
 /* --- ANIMATED BUTTONS WITH GLOW EFFECT --- */
 .btn {
     display: block;
-    padding: 6px 10px;
+    padding: 8px 14px;     /* Button size ko thoda standard kiya click karne ke liye */
     margin: 0;
     border-radius: 6px;
     text-decoration: none;
     font-weight: bold;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
     transition: all 0.3s ease;
     white-space: nowrap;
@@ -146,4 +153,5 @@ input::placeholder {
 .download:hover {
     transform: scale(1.05);
     background: #26ff26;
-    box-shadow: 0 0 15px #00ff00, 0 0 25px rgba(0, 255, 0
+    box-shadow: 0 0 15px #00ff00, 0 0 25px rgba(0, 255, 0, 0.6);
+}
