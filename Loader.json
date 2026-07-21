@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "url": "https://t.me/VoltageLoader",
+
+  "pubgm": false,
+  "bgmi": true,
+  "korea": false,
+
+  "pubgm_msg": "PUBG GL Paid Version Buy Now",
+  "bgmi_msg": "BGMI SEVER MAINTENANCE",
+  "korea_msg": "KOREA Paid Version Buy Now",
+
+  "pubgm_obb_url": "https://your-hosting.com/files/main.pubg.obb",
+  "bgmi_obb_url": "https://your-hosting.com/files/main.bgmi.obb",
+  "korea_obb_url": "https://your-hosting.com/files/main.korea.obb"
+}
