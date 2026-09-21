@@ -1,8 +1,8 @@
 {
   "version": "1.0",
   "url": "https://t.me/VoltageLoader",
-  "bgmi_v1": false,
+  "bgmi_v1": true,
   "bgmi_v1_msg": "Brutal Menu is currently offline.",
-  "bgmi_v2": false,
+  "bgmi_v2": true,
   "bgmi_v2_msg": "SAFE ESP Menu is currently offline."
 }
