@@ -89,14 +89,14 @@ def send_timeout_failed_message(chat_id, user_id, order_id, action_type="plan"):
           "⏳ PAYMENT TIME EXPIRED\n❌ APPROVAL REQUEST CLOSED\n📩 TRY AGAIN —"
           f" CONTACT: @{OWNER_USERNAME}",
           parse_mode="Markdown",
-          reply_markup=get_main_reply_keyboard(),
+          reply_markup=get_main_reply_keyboard(user_id),
       )
     except Exception:
       pass
 
 
 # --- KEYBOARDS ---
-def get_main_reply_keyboard():
+def get_main_reply_keyboard(user_id=None):
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   markup.add(
       types.KeyboardButton("🛒 PURCHASE KEY"), types.KeyboardButton("🔐 MY KEYS")
@@ -106,6 +106,8 @@ def get_main_reply_keyboard():
       types.KeyboardButton("♻️ SETUP CHANNEL"),
       types.KeyboardButton("💬 CONTACT SUPPORT"),
   )
+  if user_id == ADMIN_ID:
+    markup.add(types.KeyboardButton("👑 SUPER ADMIN"))
   return markup
 
 
@@ -138,8 +140,9 @@ def is_admin_or_reseller(user_id):
 # --- START COMMAND ---
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
-  if message.from_user.id in user_states:
-    del user_states[message.from_user.id]
+  user_id = message.from_user.id
+  if user_id in user_states:
+    del user_states[user_id]
 
   welcome_text = (
       "👋 *WELCOME TO R2F OFFICIAL KEY STORE!*\n\n"
@@ -154,7 +157,7 @@ def send_welcome(message):
       message.chat.id,
       welcome_text,
       parse_mode="Markdown",
-      reply_markup=get_main_reply_keyboard(),
+      reply_markup=get_main_reply_keyboard(user_id),
   )
 
 
@@ -174,8 +177,112 @@ def handle_back_button(message):
       message.chat.id,
       "🏠 *MAIN MENU:*",
       parse_mode="Markdown",
-      reply_markup=get_main_reply_keyboard(),
+      reply_markup=get_main_reply_keyboard(user_id),
   )
+
+
+# --- SUPER ADMIN PANEL HANDLER ---
+@bot.message_handler(func=lambda message: message.text == "👑 SUPER ADMIN")
+def super_admin_panel(message):
+  if message.from_user.id != ADMIN_ID:
+    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED!")
+    return
+
+  markup = types.InlineKeyboardMarkup(row_width=1)
+  markup.add(
+      types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data="sa_add_single"),
+      types.InlineKeyboardButton("📦 BULK ADD KEYS", callback_data="sa_add_bulk"),
+      types.InlineKeyboardButton("❌ DELETE KEY", callback_data="sa_del_prompt"),
+      types.InlineKeyboardButton("📋 SHOW ALL KEYS", callback_data="sa_show_keys"),
+  )
+  bot.send_message(
+      message.chat.id,
+      "👑 *SUPER ADMIN PANEL*\n\nNiche diye gaye options mein se select karein:",
+      parse_mode="Markdown",
+      reply_markup=markup,
+  )
+
+
+# --- SUPER ADMIN CALLBACK HANDLERS ---
+@bot.callback_query_handler(func=lambda call: call.data.startswith("sa_"))
+def super_admin_callbacks(call):
+  if call.from_user.id != ADMIN_ID:
+    bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
+    return
+
+  data = call.data
+
+  if data == "sa_add_single":
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "➕ *SINGLE KEY ADD KARNE KA FORMAT:*\n\n`/addkey [LOADER] [DURATION] [KEY]`\n\n*Example:* `/addkey NEXA 1 Day NICE-KEY-123`",
+        parse_mode="Markdown",
+    )
+
+  elif data == "sa_add_bulk":
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "📦 *BULK KEYS ADD KARNE KA TARIKA:*\n\nCommand bhejein: `/bulkall [LOADER]`\n*Example:* `/bulkall NEXA`\n\nUske baad bot ko lines mein keys bhejein: `KEY | DURATION`",
+        parse_mode="Markdown",
+    )
+
+  elif data == "sa_del_prompt":
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "❌ *KEY DELETE KARNE KA FORMAT:*\n\n`/delkey [KEY_ID]`\n\n*Example:* `/delkey 5`\n*(Pehle 'SHOW ALL KEYS' par click karke Key ID dekh lein)*",
+        parse_mode="Markdown",
+    )
+
+  elif data == "sa_show_keys":
+    bot.answer_callback_query(call.id)
+    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, loader, duration, license_key, status, assigned_to FROM keys_table ORDER BY id DESC LIMIT 50")
+    keys = cursor.fetchall()
+    conn.close()
+
+    if not keys:
+      bot.send_message(call.message.chat.id, "❌ Database mein koi keys available nahi hain.")
+      return
+
+    text = "📋 *ALL STORED KEYS (Last 50):*\n\n"
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for kid, loader_code, duration, lkey, status, assigned_to in keys:
+      loader_disp = get_loader_display_name(loader_code)
+      status_icon = "🟢 Unused" if status == 'unused' else f"🔴 Used (User: {assigned_to})"
+      text += f"🆔 ID: `{kid}` | *{loader_disp}* ({duration})\n🔑 `{lkey}`\nStatus: {status_icon}\n\n"
+      markup.add(
+          types.InlineKeyboardButton(f"🗑️ Delete ID {kid}", callback_data=f"sa_del_id_{kid}")
+      )
+
+    bot.send_message(
+        call.message.chat.id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif data.startswith("sa_del_id_"):
+    kid = int(data.split("_")[3])
+    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM keys_table WHERE id = ?", (kid,))
+    conn.commit()
+    conn.close()
+
+    bot.answer_callback_query(call.id, f"✅ Key ID {kid} deleted successfully!", show_alert=True)
+    try:
+      bot.edit_message_text(
+          f"✅ *Key ID `{kid}` Successfully Deleted!*",
+          call.message.chat.id,
+          call.message.message_id,
+          parse_mode="Markdown",
+      )
+    except Exception:
+      pass
 
 
 # --- REPLY MENU HANDLERS ---
@@ -189,8 +296,9 @@ def handle_back_button(message):
     ]
 )
 def handle_reply_menu(message):
-  if message.from_user.id in user_states:
-    del user_states[message.from_user.id]
+  user_id = message.from_user.id
+  if user_id in user_states:
+    del user_states[user_id]
 
   if message.text == "🛒 PURCHASE KEY":
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -215,7 +323,6 @@ def handle_reply_menu(message):
     )
 
   elif message.text == "🔐 MY KEYS":
-    user_id = message.from_user.id
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute(
@@ -255,7 +362,6 @@ def handle_reply_menu(message):
   elif message.text == "🤝 BUY RESELLERSHIP":
     amount = 1599
     current_time = time.time()
-    user_id = message.from_user.id
 
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
     cursor = conn.cursor()
@@ -351,7 +457,7 @@ def select_plan(call):
       ("⏱ 2 DAY - ₹149", "2 Day", 149),
       ("⏱ 3 DAY - ₹199", "3 Day", 199),
       ("⏱ 7 DAY - ₹399", "7 Day", 399),
-      ("⏱️️ 30 DAY - ₹799", "30 Day", 799),
+      ("⏱ 30 DAY - ₹799", "30 Day", 799),
   ]
 
   for title, duration, amount in plans:
@@ -467,6 +573,7 @@ def handle_utr_text(message):
           "♻️ SETUP CHANNEL",
           "💬 CONTACT SUPPORT",
           "🔚 BACK",
+          "👑 SUPER ADMIN",
       ]
   ) or text.startswith("/"):
     if user_id in user_states and "qr_msg_id" in user_states[user_id]:
@@ -477,6 +584,8 @@ def handle_utr_text(message):
     del user_states[user_id]
     if "BACK" in text.upper():
       handle_back_button(message)
+    elif "SUPER ADMIN" in text.upper():
+      super_admin_panel(message)
     else:
       handle_reply_menu(message)
     return
@@ -567,7 +676,7 @@ def handle_payment_done_button(message):
     bot.send_message(
         message.chat.id,
         "❌ KOI ACTIVE PAYMENT SESSION NAHI MILA. KRIPYA /start DABAYEIN.",
-        reply_markup=get_main_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(user_id),
     )
     return
 
@@ -624,7 +733,7 @@ def handle_payment_done_button(message):
         "⏳ *PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS APPROVAL"
         " KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
         parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(user_id),
     )
 
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -667,7 +776,7 @@ def handle_payment_done_button(message):
         "⏳ *RESELLER PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS"
         " APPROVAL KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
         parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(user_id),
     )
 
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -778,7 +887,7 @@ def admin_approval_callback(call):
             f" {loader_display} ({duration})\n• *YOUR LICENSE"
             f" KEY:*\n`{license_key}`",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(),
+            reply_markup=get_main_reply_keyboard(user_id),
         )
       except Exception:
         pass
@@ -807,7 +916,7 @@ def admin_approval_callback(call):
             "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
             " PAYMENT & SEND UTR.",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(),
+            reply_markup=get_main_reply_keyboard(user_id),
         )
       except Exception:
         pass
@@ -861,7 +970,7 @@ def admin_approval_callback(call):
             "🎉 *RESELLER SHIP APPROVED!*\nYOUR RESELLER SHIP HAS BEEN ACTIVATED"
             " FOR 1 MONTH!",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(),
+            reply_markup=get_main_reply_keyboard(user_id),
         )
       except Exception:
         pass
@@ -892,7 +1001,7 @@ def admin_approval_callback(call):
             "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
             " PAYMENT & SEND UTR.",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(),
+            reply_markup=get_main_reply_keyboard(user_id),
         )
       except Exception:
         pass
@@ -909,7 +1018,7 @@ def handle_cancel_button(message):
     bot.send_message(
         message.chat.id,
         "❌ ACTION CANCELLED.",
-        reply_markup=get_main_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(user_id),
     )
     return
 
@@ -937,7 +1046,7 @@ def handle_cancel_button(message):
   bot.send_message(
       message.chat.id,
       "❌ PAYMENT CANCELLED SUCCESSFULLY.",
-      reply_markup=get_main_reply_keyboard(),
+      reply_markup=get_main_reply_keyboard(user_id),
   )
 
 
@@ -996,6 +1105,37 @@ def add_key(message):
         message,
         "❌ FORMAT ERROR!\nUSE FORMAT: `/addkey [LOADER] [DURATION] [KEY]`\nEXAMPLE:"
         " `/addkey NEXA 1 Day NICE-KEY-123`",
+        parse_mode="Markdown",
+    )
+
+
+# --- ADMIN COMMAND: DELETE KEY (/delkey) ---
+@bot.message_handler(commands=["delkey"])
+def delete_key(message):
+  user_id = message.from_user.id
+  if not is_admin_or_reseller(user_id):
+    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
+    return
+
+  try:
+    parts = message.text.split(" ", 1)
+    key_id = int(parts[1].strip())
+
+    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM keys_table WHERE id = ?", (key_id,))
+    conn.commit()
+    conn.close()
+
+    bot.reply_to(
+        message,
+        f"✅ KEY ID `{key_id}` SUCCESSFULLY DELETE HO GAYI HAI!",
+        parse_mode="Markdown",
+    )
+  except Exception:
+    bot.reply_to(
+        message,
+        "❌ FORMAT ERROR!\nUSE FORMAT: `/delkey [KEY_ID]`\nEXAMPLE: `/delkey 5`",
         parse_mode="Markdown",
     )
 
@@ -1070,7 +1210,7 @@ def process_bulk_all_keys(message):
       message,
       f"✅ *BULK KEYS ADDED SUCCESSFULLY!*\n• *LOADER:*"
       f" {loader_display}\n• *TOTAL KEYS ADDED:* `{added_count}`",
-      parse_password="Markdown",
+      parse_mode="Markdown",
   )
 
 
