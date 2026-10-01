@@ -86,8 +86,8 @@ def send_timeout_failed_message(chat_id, user_id, order_id, action_type="plan"):
     try:
       bot.send_message(
           chat_id,
-          "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
-          f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
+          "⏳ PAYMENT TIME EXPIRED\n❌ APPROVAL REQUEST CLOSED\n📩 TRY AGAIN —"
+          f" CONTACT: @{OWNER_USERNAME}",
           parse_mode="Markdown",
           reply_markup=get_main_reply_keyboard(),
       )
@@ -103,7 +103,7 @@ def get_main_reply_keyboard():
   )
   markup.add(types.KeyboardButton("🤝 BUY RESELLERSHIP"))
   markup.add(
-      types.KeyboardButton("♻ SETUP CHANNEL"),
+      types.KeyboardButton("♻️ SETUP CHANNEL"),
       types.KeyboardButton("💬 CONTACT SUPPORT"),
   )
   return markup
@@ -351,7 +351,7 @@ def select_plan(call):
       ("⏱ 2 DAY - ₹149", "2 Day", 149),
       ("⏱ 3 DAY - ₹199", "3 Day", 199),
       ("⏱ 7 DAY - ₹399", "7 Day", 399),
-      ("⏱️ 30 DAY - ₹799", "30 Day", 799),
+      ("⏱️️ 30 DAY - ₹799", "30 Day", 799),
   ]
 
   for title, duration, amount in plans:
@@ -804,8 +804,8 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
-            f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
+            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
+            " PAYMENT & SEND UTR.",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
@@ -889,8 +889,8 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
-            f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
+            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
+            " PAYMENT & SEND UTR.",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
@@ -1070,7 +1070,7 @@ def process_bulk_all_keys(message):
       message,
       f"✅ *BULK KEYS ADDED SUCCESSFULLY!*\n• *LOADER:*"
       f" {loader_display}\n• *TOTAL KEYS ADDED:* `{added_count}`",
-      parse_mode="Markdown",
+      parse_password="Markdown",
   )
 
 
