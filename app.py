@@ -476,6 +476,14 @@ def handle_plan(call):
 def handle_utr_text(message):
   user_id = message.from_user.id
 
+  # Fix: Agar user ne button dabaya hai toh handle karein
+  if message.text == "✅ Payment Done":
+    handle_payment_done_button(message)
+    return
+  elif message.text == "❌ Order Cancel":
+    handle_cancel_button(message)
+    return
+
   if message.text in [
       "🛒 PURCHASE KEY",
       "🔐 MY KEYS",
@@ -520,7 +528,6 @@ def handle_utr_text(message):
   if match:
     utr = match.group(0)
   else:
-    # Fallback: remove all non-digit chars and check if it's 12 digits
     cleaned = "".join(filter(str.isdigit, raw_text))
     if len(cleaned) == 12:
       utr = cleaned
