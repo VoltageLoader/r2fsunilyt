@@ -67,7 +67,7 @@ def get_main_reply_keyboard():
   btn1 = types.KeyboardButton("🛒 PURCHASE KEY")
   btn2 = types.KeyboardButton("🔐 MY KEYS")
   btn3 = types.KeyboardButton("🤝 BUY RESELLERSHIP")
-  btn4 = types.KeyboardButton("♻️️ SETUP CHANNEL")
+  btn4 = types.KeyboardButton("♻ SETUP CHANNEL")
   btn5 = types.KeyboardButton("💬 CONTACT SUPPORT")
   markup.add(btn1, btn2)
   markup.add(btn3)
@@ -79,7 +79,7 @@ def get_main_reply_keyboard():
 def get_payment_reply_keyboard():
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   btn1 = types.KeyboardButton("✅ Payment Done")
-  btn2 = types.KeyboardButton("❌ Cancel")
+  btn2 = types.KeyboardButton("❌ Order Cancel")
   markup.add(btn1, btn2)
   return markup
 
@@ -204,13 +204,6 @@ def handle_reply_menu(message):
     conn.commit()
     conn.close()
 
-    user_states[user_id] = {
-        "type": "reseller",
-        "order_id": order_id,
-        "timestamp": current_time,
-        "amount": amount,
-    }
-
     unique_tr = f"R2FRES{order_id}{int(current_time)}"
     upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
     qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
@@ -226,16 +219,24 @@ def handle_reply_menu(message):
         " karein**.\n"
         "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
         " karein.\n"
-        "3️⃣ Cancel karne ke liye **❌ Cancel** dabayein."
+        "3️⃣ Cancel karne ke liye **❌ Order Cancel** dabayein."
     )
 
-    bot.send_photo(
+    sent_msg = bot.send_photo(
         chat_id=message.chat.id,
         photo=qr_api_url,
         caption=caption_text,
         parse_mode="Markdown",
         reply_markup=get_payment_reply_keyboard(),
     )
+
+    user_states[user_id] = {
+        "type": "reseller",
+        "order_id": order_id,
+        "timestamp": current_time,
+        "amount": amount,
+        "qr_msg_id": sent_msg.message_id,
+    }
 
   elif message.text == "♻️ SETUP CHANNEL":
     markup = types.InlineKeyboardMarkup()
@@ -320,15 +321,6 @@ def handle_plan(call):
   conn.commit()
   conn.close()
 
-  user_states[user_id] = {
-      "type": "plan",
-      "order_id": order_id,
-      "loader": loader_code,
-      "duration": duration,
-      "amount": amount,
-      "timestamp": current_time,
-  }
-
   unique_tr = f"R2F{order_id}{int(current_time)}"
   upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
   qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
@@ -344,16 +336,26 @@ def handle_plan(call):
       " karein**.\n"
       "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
       " karein.\n"
-      "3️⃣ Cancel karne ke liye **❌ Cancel** dabayein."
+      "3️⃣ Cancel karne ke liye **❌ Order Cancel** dabayein."
   )
 
-  bot.send_photo(
+  sent_msg = bot.send_photo(
       chat_id=call.message.chat.id,
       photo=qr_api_url,
       caption=caption_text,
       parse_mode="Markdown",
       reply_markup=get_payment_reply_keyboard(),
   )
+
+  user_states[user_id] = {
+      "type": "plan",
+      "order_id": order_id,
+      "loader": loader_code,
+      "duration": duration,
+      "amount": amount,
+      "timestamp": current_time,
+      "qr_msg_id": sent_msg.message_id,
+  }
 
 
 # --- HANDLE PAYMENT DONE BUTTON FROM MENU ---
@@ -370,6 +372,14 @@ def handle_payment_done_button(message):
     return
 
   state = user_states[user_id]
+
+  # Delete QR code photo message
+  if "qr_msg_id" in state:
+    try:
+      bot.delete_message(message.chat.id, state["qr_msg_id"])
+    except Exception:
+      pass
+
   if time.time() - state["timestamp"] > 300:
     del user_states[user_id]
     bot.send_message(
@@ -460,8 +470,8 @@ def handle_payment_done_button(message):
     bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown", reply_markup=admin_markup)
 
 
-# --- HANDLE CANCEL BUTTON FROM MENU ---
-@bot.message_handler(func=lambda message: message.text == "❌ Cancel")
+# --- HANDLE ORDER CANCEL BUTTON FROM MENU ---
+@bot.message_handler(func=lambda message: message.text == "❌ Order Cancel")
 def handle_cancel_button(message):
   user_id = message.from_user.id
 
@@ -476,6 +486,13 @@ def handle_cancel_button(message):
   state = user_states[user_id]
   order_id = state["order_id"]
   action_type = state["type"]
+
+  # Delete QR code photo message
+  if "qr_msg_id" in state:
+    try:
+      bot.delete_message(message.chat.id, state["qr_msg_id"])
+    except Exception:
+      pass
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
@@ -510,6 +527,11 @@ def handle_utr_text(message):
       "♻️ SETUP CHANNEL",
       "💬 CONTACT SUPPORT",
   ] or message.text.startswith("/"):
+    if user_id in user_states and "qr_msg_id" in user_states[user_id]:
+      try:
+        bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
+      except Exception:
+        pass
     del user_states[user_id]
     handle_reply_menu(message)
     return
@@ -517,6 +539,11 @@ def handle_utr_text(message):
   state = user_states[user_id]
 
   if time.time() - state["timestamp"] > 300:
+    if "qr_msg_id" in state:
+      try:
+        bot.delete_message(message.chat.id, state["qr_msg_id"])
+      except Exception:
+        pass
     del user_states[user_id]
     bot.reply_to(
         message,
@@ -737,7 +764,7 @@ def add_key(message):
         message,
         "❌ Format error!\nUse format: `/addkey [Loader] [Duration] [Key]`\nExample:"
         " `/addkey NEXA 5 Hour NICE-KEY-123`",
-        parse_Mode="Markdown",
+        parse_mode="Markdown",
     )
 
 
