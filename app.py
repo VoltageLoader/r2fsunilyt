@@ -1,8 +1,10 @@
+import os
 import re
 import sqlite3
 import threading
 import time
 import urllib.parse
+from flask import Flask
 import telebot
 from telebot import types
 
@@ -572,7 +574,9 @@ def handle_utr_text(message):
   if action_type == "plan":
     cursor.execute("UPDATE orders SET utr = ? WHERE id = ?", (utr, order_id))
   else:
-    cursor.execute("UPDATE reseller_orders SET utr = ? WHERE id = ?", (utr, order_id))
+    cursor.execute(
+        "UPDATE reseller_orders SET utr = ? WHERE id = ?", (utr, order_id)
+    )
   conn.commit()
   conn.close()
 
@@ -649,7 +653,8 @@ def handle_payment_done_button(message):
     loader_display = get_loader_display_name(loader_code)
 
     cursor.execute(
-        "SELECT id, license_key FROM keys_table WHERE duration = ? AND status = 'unused' LIMIT 1",
+        "SELECT id, license_key FROM keys_table WHERE duration = ? AND status ="
+        " 'unused' LIMIT 1",
         (duration,),
     )
     key_row = cursor.fetchone()
@@ -889,5 +894,59 @@ def process_bulk_all_keys(message):
     bot.reply_to(message, "❌ Koi data nahi mila!")
     return
 
-  conn = sqlite3.connect("db", check_same_thread=False)  # or bot_database.db
-  # Wait, let's keep it consistent: sqlite3.connect("bot_database.db", check_same_thread=False)
+  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+  cursor = conn.cursor()
+
+  added_count = 0
+  for line in lines:
+    if "|" in line:
+      parts = line.split("|", 1)
+      key = parts[0].strip()
+      duration = parts[1].strip()
+      if key and duration:
+        cursor.execute(
+            "INSERT INTO keys_table (loader, duration, license_key, status)"
+            " VALUES (?, ?, ?, 'unused')",
+            (loader_code, duration, key),
+        )
+        added_count += 1
+
+  conn.commit()
+  conn.close()
+
+  loader_display = get_loader_display_name(loader_code)
+  bot.reply_to(
+      message,
+      f"✅ *Bulk Keys Added Successfully!*\n• *Loader:*"
+      f" {loader_display}\n• *Total Keys Added:* `{added_count}`",
+      parse_mode="Markdown",
+  )
+
+
+# --- FLASK SERVER & BOT RUNNER ---
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+  return "Bot is active and running smoothly!"
+
+
+def run_flask():
+  port = int(os.environ.get("PORT", 10000))
+  app.run(host="0.0.0.0", port=port)
+
+
+if __name__ == "__main__":
+  # Run Flask server in background thread so Render detects an open port
+  threading.Thread(target=run_flask, daemon=True).start()
+
+  # Start Telegram Bot
+  try:
+    bot.remove_webhook()
+    bot.delete_webhook(drop_pending_updates=True)
+  except Exception:
+    pass
+
+  print("Bot is running with Flask web server on Render...")
+  bot.infinity_polling(timeout=60, long_polling_timeout=60)
