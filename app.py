@@ -12,7 +12,7 @@ from telebot import types
 TOKEN = "8052389503:AAG8O3ZH4NCJJrW7erp4u9W3IfKm4z18itk"
 ADMIN_ID = 6795305850
 UPI_ID = "8905094188@ybl"
-UPI_NAME = "Nexa Cyber"
+UPI_NAME = "NEXA CYBER"
 OWNER_USERNAME = "R2FSUNILYT"
 SETUP_CHANNEL_URL = "https://t.me/VoltageLoader"
 
@@ -65,7 +65,7 @@ def get_loader_display_name(loader_code):
   return loader_code
 
 
-# --- BACKGROUND WORKER: SEND TIMEOUT MESSAGE AFTER 5 MINS (ORDER WON'T EXPIRE) ---
+# --- BACKGROUND WORKER: SEND TIMEOUT MESSAGE AFTER 5 MINS ---
 def send_timeout_failed_message(chat_id, user_id, order_id, action_type="plan"):
   time.sleep(300)  # 5 Minutes
 
@@ -82,13 +82,12 @@ def send_timeout_failed_message(chat_id, user_id, order_id, action_type="plan"):
     row = cursor.fetchone()
   conn.close()
 
-  # Agar order abhi bhi pending ya pending_admin hai, toh user ko message bhej do (order expired nahi hoga)
   if row and row[0] in ["pending", "pending_admin"]:
     try:
       bot.send_message(
           chat_id,
-          "Payment Approved Failed ❌\n\n👉Please Contact To"
-          f" Owner\n\n💬Massage - @{OWNER_USERNAME}",
+          "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
+          f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
           parse_mode="Markdown",
           reply_markup=get_main_reply_keyboard(),
       )
@@ -112,15 +111,15 @@ def get_main_reply_keyboard():
 
 def get_back_reply_keyboard():
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-  markup.add(types.KeyboardButton("🔚 Back"))
+  markup.add(types.KeyboardButton("🔚 BACK"))
   return markup
 
 
 def get_payment_reply_keyboard():
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
   markup.add(
-      types.KeyboardButton("✅ Payment Done"),
-      types.KeyboardButton("❌ Order Cancel"),
+      types.KeyboardButton("✅ PAYMENT DONE"),
+      types.KeyboardButton("❌ ORDER CANCEL"),
   )
   return markup
 
@@ -160,7 +159,7 @@ def send_welcome(message):
 
 
 # --- BACK BUTTON HANDLER ---
-@bot.message_handler(func=lambda message: message.text == "🔚 Back")
+@bot.message_handler(func=lambda message: message.text == "🔚 BACK")
 def handle_back_button(message):
   user_id = message.from_user.id
   if user_id in user_states:
@@ -173,7 +172,7 @@ def handle_back_button(message):
 
   bot.send_message(
       message.chat.id,
-      "🏠 *Main Menu:*",
+      "🏠 *MAIN MENU:*",
       parse_mode="Markdown",
       reply_markup=get_main_reply_keyboard(),
   )
@@ -197,7 +196,7 @@ def handle_reply_menu(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton(
-            "⚡ Voltage Loader", callback_data="loader_Voltage"
+            "⚡ VOLTAGE LOADER", callback_data="loader_Voltage"
         ),
         types.InlineKeyboardButton(
             "🔥 NICE X NEXA", callback_data="loader_NEXA"
@@ -205,13 +204,13 @@ def handle_reply_menu(message):
     )
     bot.send_message(
         message.chat.id,
-        "📦 *Select Loader*\n\nApna pasandida loader select karein:",
+        "📦 *SELECT LOADER*\n\nAPNA PASANDIDA LOADER SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
     bot.send_message(
         message.chat.id,
-        "👇 Piche jaane ke liye niche **🔚 Back** dabayein:",
+        "👇 PICHE JAANE KE LIYE NICHE **🔚 BACK** DABAYEIN:",
         reply_markup=get_back_reply_keyboard(),
     )
 
@@ -230,19 +229,19 @@ def handle_reply_menu(message):
     if not keys:
       bot.send_message(
           message.chat.id,
-          "❌ Aapke paas koi active key nahi hai!",
+          "❌ AAPKE PAAS KOI ACTIVE KEY NAHI HAI!",
           parse_mode="Markdown",
       )
       return
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-    text = "🔐 *Your Purchased Keys:*\n\n"
+    text = "🔐 *YOUR PURCHASED KEYS:*\n\n"
     for key_id, loader_code, duration, key in keys:
       loader_display = get_loader_display_name(loader_code)
       text += f"• *{loader_display}* ({duration})\n🔑 `{key}`\n\n"
       markup.add(
           types.InlineKeyboardButton(
-              f"🔄 Reset Key ({loader_display} - {duration})",
+              f"🔄 RESET KEY ({loader_display} - {duration})",
               callback_data=f"reset_{key_id}",
           )
       )
@@ -275,14 +274,14 @@ def handle_reply_menu(message):
 
     caption_text = (
         "💳 *SCAN & PAY*\n\n"
-        "• *LOADER:* Reseller Ship (1 Month)\n"
+        "• *LOADER:* RESELLER SHIP (1 MONTH)\n"
         f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
         f"• *UPI ID:* `{UPI_ID}`\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-        "1️⃣ Pehle payment karein aur **12-digit UTR** yahin chat mein send"
-        " karein.\n"
-        "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
-        " karein."
+        "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND"
+        " KAREIN.\n"
+        "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK"
+        " KAREIN."
     )
 
     sent_msg = bot.send_photo(
@@ -311,12 +310,12 @@ def handle_reply_menu(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(
         types.InlineKeyboardButton(
-            "🔗 Open Setup Channel", url=SETUP_CHANNEL_URL
+            "🔗 OPEN SETUP CHANNEL", url=SETUP_CHANNEL_URL
         )
     )
     bot.send_message(
         message.chat.id,
-        "♻️ *Click the button below to open Setup Channel:*",
+        "♻️ *CLICK THE BUTTON BELOW TO OPEN SETUP CHANNEL:*",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -325,18 +324,18 @@ def handle_reply_menu(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(
         types.InlineKeyboardButton(
-            "💬 Open Support Chat", url=f"https://t.me/{OWNER_USERNAME}"
+            "💬 OPEN SUPPORT CHAT", url=f"https://t.me/{OWNER_USERNAME}"
         )
     )
     bot.send_message(
         message.chat.id,
-        "💬 *Click the button below to contact Support:*",
+        "💬 *CLICK THE BUTTON BELOW TO CONTACT SUPPORT:*",
         parse_mode="Markdown",
         reply_markup=markup,
     )
 
 
-# --- SELECT PLANS (UPDATED PRICES) ---
+# --- SELECT PLANS ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("loader_"))
 def select_plan(call):
   loader_code = call.data.split("_")[1]
@@ -347,12 +346,12 @@ def select_plan(call):
 
   markup = types.InlineKeyboardMarkup(row_width=2)
   plans = [
-      ("⏱ 5 Hour - ₹30", "5 Hour", 30),
-      ("⏱ 1 Day - ₹99", "1 Day", 99),
-      ("⏱️️ 2 Day - ₹149", "2 Day", 149),
-      ("⏱ 3 Day - ₹199", "3 Day", 199),
-      ("⏱ 7 Day - ₹399", "7 Day", 399),
-      ("⏱️ 30 Day - ₹799", "30 Day", 799),
+      ("⏱ 5 HOUR - ₹30", "5 Hour", 30),
+      ("⏱ 1 DAY - ₹99", "1 Day", 99),
+      ("⏱ 2 DAY - ₹149", "2 Day", 149),
+      ("⏱ 3 DAY - ₹199", "3 Day", 199),
+      ("⏱ 7 DAY - ₹399", "7 Day", 399),
+      ("⏱️ 30 DAY - ₹799", "30 Day", 799),
   ]
 
   for title, duration, amount in plans:
@@ -361,7 +360,7 @@ def select_plan(call):
         (duration,),
     )
     stock_count = cursor.fetchone()[0]
-    button_title = f"{title} | Stock: {stock_count}"
+    button_title = f"{title} | STOCK: {stock_count}"
     markup.add(
         types.InlineKeyboardButton(
             button_title, callback_data=f"plan_{loader_code}_{duration}_{amount}"
@@ -371,7 +370,7 @@ def select_plan(call):
   conn.close()
 
   bot.edit_message_text(
-      f"📋 *{loader_display} Plans*\n\nApna plan select karein:",
+      f"📋 *{loader_display} PLANS*\n\nAPNA PLAN SELECT KAREIN:",
       call.message.chat.id,
       call.message.message_id,
       parse_mode="Markdown",
@@ -412,10 +411,10 @@ def handle_plan(call):
       f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
       f"• *UPI ID:* `{UPI_ID}`\n\n"
       "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-      "1️⃣ Pehle payment karein aur **12-digit UTR** yahin chat mein send"
-      " karein.\n"
-      "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
-      " karein."
+      "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND"
+      " KAREIN.\n"
+      "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK"
+      " KAREIN."
   )
 
   sent_msg = bot.send_photo(
@@ -443,43 +442,47 @@ def handle_plan(call):
   ).start()
 
 
-# --- HANDLE UTR TEXT INPUT (SMART REGEX EXTRACTION) ---
+# --- HANDLE UTR TEXT INPUT ---
 @bot.message_handler(
     func=lambda message: message.from_user.id in user_states
     and user_states[message.from_user.id]["type"] in ["plan", "reseller"]
 )
 def handle_utr_text(message):
   user_id = message.from_user.id
+  text = message.text or ""
 
-  if message.text == "✅ Payment Done":
+  if "PAYMENT DONE" in text.upper():
     handle_payment_done_button(message)
     return
-  elif message.text == "❌ Order Cancel":
+  elif "ORDER CANCEL" in text.upper():
     handle_cancel_button(message)
     return
 
-  if message.text in [
-      "🛒 PURCHASE KEY",
-      "🔐 MY KEYS",
-      "🤝 BUY RESELLERSHIP",
-      "♻️ SETUP CHANNEL",
-      "💬 CONTACT SUPPORT",
-      "🔚 Back",
-  ] or message.text.startswith("/"):
+  if any(
+      menu_item in text.upper()
+      for menu_item in [
+          "🛒 PURCHASE KEY",
+          "🔐 MY KEYS",
+          "🤝 BUY RESELLERSHIP",
+          "♻️ SETUP CHANNEL",
+          "💬 CONTACT SUPPORT",
+          "🔚 BACK",
+      ]
+  ) or text.startswith("/"):
     if user_id in user_states and "qr_msg_id" in user_states[user_id]:
       try:
         bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
       except Exception:
         pass
     del user_states[user_id]
-    if message.text == "🔚 Back":
+    if "BACK" in text.upper():
       handle_back_button(message)
     else:
       handle_reply_menu(message)
     return
 
   state = user_states[user_id]
-  raw_text = message.text.strip()
+  raw_text = text.strip()
 
   match = re.search(r"\b\d{12}\b", raw_text)
   if match:
@@ -491,8 +494,8 @@ def handle_utr_text(message):
     else:
       bot.reply_to(
           message,
-          "❌ *Invalid UTR Format!*\nAapka UTR sahi format mein nahi mila."
-          " Kripya apna **12-digit numeric UTR** dobara bhejein:",
+          "❌ *INVALID UTR FORMAT!*\nAAPKA UTR SAHI FORMAT MEIN NAHI MILA."
+          " KRIPYA APNA **12-DIGIT NUMERIC UTR** DOBARA BHEJEIN:",
           parse_mode="Markdown",
           reply_markup=get_payment_reply_keyboard(),
       )
@@ -514,16 +517,16 @@ def handle_utr_text(message):
   if used_in_orders or used_in_resellers:
     bot.reply_to(
         message,
-        "❌ *Fraud Alert!* Yeh UTR number pehle hi use kiya ja chuka hai. Dubara"
-        " use nahi ho sakta!",
+        "❌ *FRAUD ALERT!* YEH UTR NUMBER PEHLE HI USE KIYA JA CHUKA HAI. DUBARA"
+        " USE NAHI HO SAKTA!",
         parse_mode="Markdown",
         reply_markup=get_payment_reply_keyboard(),
     )
     try:
       bot.send_message(
           ADMIN_ID,
-          f"🚨 *Fraud/Duplicate UTR Attempt!*\n👤 User ID: `{user_id}`\n💳 Tried"
-          f" to reuse UTR: `{utr}`",
+          f"🚨 *FRAUD/DUPLICATE UTR ATTEMPT!*\n👤 USER ID: `{user_id}`\n💳 TRIED"
+          f" TO REUSE UTR: `{utr}`",
           parse_mode="Markdown",
       )
     except Exception:
@@ -546,22 +549,24 @@ def handle_utr_text(message):
 
   bot.reply_to(
       message,
-      "✅ *UTR Verified & Saved Successfully!*\nAb niche menu mein diye gaye"
-      " **✅ Payment Done** button par click karein.",
+      "✅ *UTR VERIFIED & SAVED SUCCESSFULLY!*\nAB NICHE MENU MEIN DIYE GAYE"
+      " **✅ PAYMENT DONE** BUTTON PAR CLICK KAREIN.",
       parse_mode="Markdown",
       reply_markup=get_payment_reply_keyboard(),
   )
 
 
-# --- HANDLE PAYMENT DONE BUTTON (SENDS TO ADMIN FOR APPROVAL) ---
-@bot.message_handler(func=lambda message: message.text == "✅ Payment Done")
+# --- HANDLE PAYMENT DONE BUTTON ---
+@bot.message_handler(
+    func=lambda message: "PAYMENT DONE" in (message.text or "").upper()
+)
 def handle_payment_done_button(message):
   user_id = message.from_user.id
 
   if user_id not in user_states:
     bot.send_message(
         message.chat.id,
-        "❌ Koi active payment session nahi mila. Kripya /start dabayein.",
+        "❌ KOI ACTIVE PAYMENT SESSION NAHI MILA. KRIPYA /start DABAYEIN.",
         reply_markup=get_main_reply_keyboard(),
     )
     return
@@ -596,8 +601,8 @@ def handle_payment_done_button(message):
     conn.close()
     bot.send_message(
         message.chat.id,
-        "❌ Pehle apna valid 12-digit UTR chat mein send karein, fir Payment"
-        " Done dabayein!",
+        "❌ PEHLE APNA VALID 12-DIGIT UTR CHAT MEIN SEND KAREIN, FIR PAYMENT"
+        " DONE DABAYEIN!",
         reply_markup=get_payment_reply_keyboard(),
     )
     return
@@ -616,8 +621,8 @@ def handle_payment_done_button(message):
 
     bot.send_message(
         message.chat.id,
-        "⏳ *Payment Submitted Successfully!*\nAapka UTR admin ke paas approval"
-        " ke liye bhej diya gaya hai. Kripya wait karein.",
+        "⏳ *PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS APPROVAL"
+        " KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(),
     )
@@ -625,19 +630,19 @@ def handle_payment_done_button(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton(
-            "✅ Approve", callback_data=f"adm_app_plan_{order_id}"
+            "✅ APPROVE", callback_data=f"adm_app_plan_{order_id}"
         ),
         types.InlineKeyboardButton(
-            "❌ Reject", callback_data=f"adm_rej_plan_{order_id}"
+            "❌ REJECT", callback_data=f"adm_rej_plan_{order_id}"
         ),
     )
 
     admin_text = (
-        f"🔔 *New Payment Approval Request!*\n\n"
-        f"👤 *User ID:* `{user_id}`\n"
-        f"📦 *Loader:* {loader_display} ({duration})\n"
-        f"💵 *Amount:* ₹{amount}\n"
-        f"💳 *UTR Number:* `{utr}`"
+        f"🔔 *NEW PAYMENT APPROVAL REQUEST!*\n\n"
+        f"👤 *USER ID:* `{user_id}`\n"
+        f"📦 *LOADER:* {loader_display} ({duration})\n"
+        f"💵 *AMOUNT:* ₹{amount}\n"
+        f"💳 *UTR NUMBER:* `{utr}`"
     )
     try:
       bot.send_message(
@@ -659,8 +664,8 @@ def handle_payment_done_button(message):
 
     bot.send_message(
         message.chat.id,
-        "⏳ *Reseller Payment Submitted Successfully!*\nAapka UTR admin ke paas"
-        " approval ke liye bhej diya gaya hai. Kripya wait karein.",
+        "⏳ *RESELLER PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS"
+        " APPROVAL KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(),
     )
@@ -668,18 +673,18 @@ def handle_payment_done_button(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton(
-            "✅ Approve", callback_data=f"adm_app_res_{order_id}"
+            "✅ APPROVE", callback_data=f"adm_app_res_{order_id}"
         ),
         types.InlineKeyboardButton(
-            "❌ Reject", callback_data=f"adm_rej_res_{order_id}"
+            "❌ REJECT", callback_data=f"adm_rej_res_{order_id}"
         ),
     )
 
     admin_text = (
-        f"⭐ *New Reseller Approval Request!*\n\n"
-        f"👤 *User ID:* `{user_id}`\n"
-        f"💵 *Amount:* ₹{amount}\n"
-        f"💳 *UTR Number:* `{utr}`"
+        f"⭐ *NEW RESELLER APPROVAL REQUEST!*\n\n"
+        f"👤 *USER ID:* `{user_id}`\n"
+        f"💵 *AMOUNT:* ₹{amount}\n"
+        f"💳 *UTR NUMBER:* `{utr}`"
     )
     try:
       bot.send_message(
@@ -689,13 +694,13 @@ def handle_payment_done_button(message):
       pass
 
 
-# --- ADMIN CALLBACK HANDLERS FOR APPROVAL/REJECTION ---
+# --- ADMIN CALLBACK HANDLERS ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("adm_"))
 def admin_approval_callback(call):
   data = call.data
   parts = data.split("_")
-  action = parts[1]  # app or rej
-  target_type = parts[2]  # plan or res
+  action = parts[1]
+  target_type = parts[2]
   order_id = int(parts[3])
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -710,7 +715,7 @@ def admin_approval_callback(call):
     row = cursor.fetchone()
     if not row:
       conn.close()
-      bot.answer_callback_query(call.id, "Order not found!")
+      bot.answer_callback_query(call.id, "ORDER NOT FOUND!")
       return
 
     user_id, utr, loader_code, duration, amount, status = row
@@ -719,7 +724,7 @@ def admin_approval_callback(call):
     if status not in ["pending", "pending_admin"]:
       conn.close()
       bot.answer_callback_query(
-          call.id, f"Order is already {status}!", show_alert=True
+          call.id, f"ORDER IS ALREADY {status.upper()}!", show_alert=True
       )
       return
 
@@ -735,7 +740,7 @@ def admin_approval_callback(call):
         conn.close()
         bot.answer_callback_query(
             call.id,
-            "❌ Out of stock! Keys khatam ho gayi hain.",
+            "❌ OUT OF STOCK! KEYS KHATAM HO GAYI HAIN.",
             show_alert=True,
         )
         return
@@ -753,11 +758,11 @@ def admin_approval_callback(call):
       conn.commit()
       conn.close()
 
-      bot.answer_callback_query(call.id, "Order Approved Successfully!")
+      bot.answer_callback_query(call.id, "ORDER APPROVED SUCCESSFULLY!")
       try:
         bot.edit_message_text(
-            f"✅ *Approved by Admin*\n\n👤 User: `{user_id}`\n📦 Loader:"
-            f" {loader_display} ({duration})\n💳 UTR: `{utr}`\n🔑 Key:"
+            f"✅ *APPROVED BY ADMIN*\n\n👤 USER: `{user_id}`\n📦 LOADER:"
+            f" {loader_display} ({duration})\n💳 UTR: `{utr}`\n🔑 KEY:"
             f" `{license_key}`",
             call.message.chat.id,
             call.message.message_id,
@@ -769,26 +774,26 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            f"🎉 *Payment Verified & Approved by Admin!*\n\n• *Loader:*"
-            f" {loader_display} ({duration})\n• *Your License"
-            f" Key:*\n`{license_key}`",
+            f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!*\n\n• *LOADER:*"
+            f" {loader_display} ({duration})\n• *YOUR LICENSE"
+            f" KEY:*\n`{license_key}`",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
       except Exception:
         pass
 
-    else:  # Rejected
+    else:
       cursor.execute(
           "UPDATE orders SET status = 'rejected' WHERE id = ?", (order_id,)
       )
       conn.commit()
       conn.close()
 
-      bot.answer_callback_query(call.id, "Order Rejected.")
+      bot.answer_callback_query(call.id, "ORDER REJECTED.")
       try:
         bot.edit_message_text(
-            f"❌ *Rejected by Admin*\n\n👤 User: `{user_id}`\n💳 UTR: `{utr}`",
+            f"❌ *REJECTED BY ADMIN*\n\n👤 USER: `{user_id}`\n💳 UTR: `{utr}`",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown",
@@ -799,15 +804,15 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "Payment Approved Failed ❌\n\n👉Please Contact To"
-            f" Owner\n\n💬Massage - @{OWNER_USERNAME}",
+            "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
+            f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
       except Exception:
         pass
 
-  else:  # reseller
+  else:
     cursor.execute(
         "SELECT user_id, utr, amount, status FROM reseller_orders WHERE id = ?",
         (order_id,),
@@ -815,7 +820,7 @@ def admin_approval_callback(call):
     row = cursor.fetchone()
     if not row:
       conn.close()
-      bot.answer_callback_query(call.id, "Order not found!")
+      bot.answer_callback_query(call.id, "ORDER NOT FOUND!")
       return
 
     user_id, utr, amount, status = row
@@ -823,7 +828,7 @@ def admin_approval_callback(call):
     if status not in ["pending", "pending_admin"]:
       conn.close()
       bot.answer_callback_query(
-          call.id, f"Order is already {status}!", show_alert=True
+          call.id, f"ORDER IS ALREADY {status.upper()}!", show_alert=True
       )
       return
 
@@ -838,10 +843,10 @@ def admin_approval_callback(call):
       conn.commit()
       conn.close()
 
-      bot.answer_callback_query(call.id, "Reseller Order Approved!")
+      bot.answer_callback_query(call.id, "RESELLER ORDER APPROVED!")
       try:
         bot.edit_message_text(
-            f"✅ *Reseller Approved by Admin*\n\n👤 User:"
+            f"✅ *RESELLER APPROVED BY ADMIN*\n\n👤 USER:"
             f" `{user_id}`\n💳 UTR: `{utr}`",
             call.message.chat.id,
             call.message.message_id,
@@ -853,8 +858,8 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "🎉 *Reseller Ship Approved!*\nYour Reseller Ship has been activated"
-            " for 1 Month!",
+            "🎉 *RESELLER SHIP APPROVED!*\nYOUR RESELLER SHIP HAS BEEN ACTIVATED"
+            " FOR 1 MONTH!",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
@@ -869,10 +874,10 @@ def admin_approval_callback(call):
       conn.commit()
       conn.close()
 
-      bot.answer_callback_query(call.id, "Reseller Order Rejected.")
+      bot.answer_callback_query(call.id, "RESELLER ORDER REJECTED.")
       try:
         bot.edit_message_text(
-            f"❌ *Reseller Rejected by Admin*\n\n👤 User:"
+            f"❌ *RESELLER REJECTED BY ADMIN*\n\n👤 USER:"
             f" `{user_id}`\n💳 UTR: `{utr}`",
             call.message.chat.id,
             call.message.message_id,
@@ -884,8 +889,8 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "Payment Approved Failed ❌\n\n👉Please Contact To"
-            f" Owner\n\n💬Massage - @{OWNER_USERNAME}",
+            "PAYMENT APPROVAL FAILED ❌\n\n👉PLEASE CONTACT TO"
+            f" OWNER\n\n💬MESSAGE - @{OWNER_USERNAME}",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(),
         )
@@ -894,14 +899,16 @@ def admin_approval_callback(call):
 
 
 # --- CANCEL ORDER ---
-@bot.message_handler(func=lambda message: message.text == "❌ Order Cancel")
+@bot.message_handler(
+    func=lambda message: "ORDER CANCEL" in (message.text or "").upper()
+)
 def handle_cancel_button(message):
   user_id = message.from_user.id
 
   if user_id not in user_states:
     bot.send_message(
         message.chat.id,
-        "❌ Action cancelled.",
+        "❌ ACTION CANCELLED.",
         reply_markup=get_main_reply_keyboard(),
     )
     return
@@ -929,7 +936,7 @@ def handle_cancel_button(message):
 
   bot.send_message(
       message.chat.id,
-      "❌ Payment cancelled successfully.",
+      "❌ PAYMENT CANCELLED SUCCESSFULLY.",
       reply_markup=get_main_reply_keyboard(),
   )
 
@@ -942,12 +949,12 @@ def handle_reset_key(call):
 
   bot.answer_callback_query(
       call.id,
-      "🔄 Reset request sent to owner/admin successfully!",
+      "🔄 RESET REQUEST SENT TO OWNER/ADMIN SUCCESSFULLY!",
       show_alert=True,
   )
   bot.send_message(
       ADMIN_ID,
-      f"⚠️ *Key Reset Request*\nUser ID: `{user_id}` requested reset for Key ID:"
+      f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID:"
       f" `{key_id}`",
       parse_mode="Markdown",
   )
@@ -958,7 +965,7 @@ def handle_reset_key(call):
 def add_key(message):
   user_id = message.from_user.id
   if not is_admin_or_reseller(user_id):
-    bot.reply_to(message, "❌ You are not authorized to use this command!")
+    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
     return
 
   try:
@@ -980,14 +987,14 @@ def add_key(message):
 
     bot.reply_to(
         message,
-        f"✅ Key added successfully!\n• *Loader:* {loader_display}\n• *Duration:"
-        f"* {duration}\n• *Key:* `{key}`",
+        f"✅ KEY ADDED SUCCESSFULLY!\n• *LOADER:* {loader_display}\n• *DURATION:"
+        f"* {duration}\n• *KEY:* `{key}`",
         parse_mode="Markdown",
     )
   except Exception:
     bot.reply_to(
         message,
-        "❌ Format error!\nUse format: `/addkey [Loader] [Duration] [Key]`\nExample:"
+        "❌ FORMAT ERROR!\nUSE FORMAT: `/addkey [LOADER] [DURATION] [KEY]`\nEXAMPLE:"
         " `/addkey NEXA 1 Day NICE-KEY-123`",
         parse_mode="Markdown",
     )
@@ -998,7 +1005,7 @@ def add_key(message):
 def bulk_all_start(message):
   user_id = message.from_user.id
   if not is_admin_or_reseller(user_id):
-    bot.reply_to(message, "❌ You are not authorized to use this command!")
+    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
     return
 
   try:
@@ -1008,8 +1015,8 @@ def bulk_all_start(message):
     user_states[user_id] = {"type": "bulk_all", "loader": loader_code}
     bot.reply_to(
         message,
-        f"📦 *Smart Multi-Duration Bulk Add Activated*\n*Loader:* {loader_code}\n\n"
-        "Ab apne keys is format mein **ek line mein ek key** bhej dein:\n"
+        f"📦 *SMART MULTI-DURATION BULK ADD ACTIVATED*\n*LOADER:* {loader_code}\n\n"
+        "AB APNE KEYS IS FORMAT MEIN **EK LINE MEIN EK KEY** BHEJ DEIN:\n"
         "`KEY | DURATION`",
         parse_mode="Markdown",
     )
@@ -1017,7 +1024,7 @@ def bulk_all_start(message):
   except Exception:
     bot.reply_to(
         message,
-        "❌ Format error!\nUse format: `/bulkall [Loader]`",
+        "❌ FORMAT ERROR!\nUSE FORMAT: `/bulkall [LOADER]`",
         parse_mode="Markdown",
     )
 
@@ -1035,7 +1042,7 @@ def process_bulk_all_keys(message):
   lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
   if not lines:
-    bot.reply_to(message, "❌ Koi data nahi mila!")
+    bot.reply_to(message, "❌ KOI DATA NAHI MILA!")
     return
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -1061,8 +1068,8 @@ def process_bulk_all_keys(message):
   loader_display = get_loader_display_name(loader_code)
   bot.reply_to(
       message,
-      f"✅ *Bulk Keys Added Successfully!*\n• *Loader:*"
-      f" {loader_display}\n• *Total Keys Added:* `{added_count}`",
+      f"✅ *BULK KEYS ADDED SUCCESSFULLY!*\n• *LOADER:*"
+      f" {loader_display}\n• *TOTAL KEYS ADDED:* `{added_count}`",
       parse_mode="Markdown",
   )
 
@@ -1073,7 +1080,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "Bot is active and running smoothly!"
+  return "BOT IS ACTIVE AND RUNNING SMOOTHLY!"
 
 
 def run_flask():
@@ -1082,10 +1089,8 @@ def run_flask():
 
 
 if __name__ == "__main__":
-  # Run Flask server in background thread so Render detects an open port
   threading.Thread(target=run_flask, daemon=True).start()
 
-  # Start Telegram Bot
   try:
     bot.remove_webhook()
     bot.delete_webhook(drop_pending_updates=True)
