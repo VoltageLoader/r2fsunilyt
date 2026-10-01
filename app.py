@@ -62,11 +62,11 @@ def get_loader_display_name(loader_code):
   return loader_code
 
 
-# --- BACKGROUND WORKER: AUTO DELETE & EXPIRE QR AFTER 5 MINS ---
+# --- BACKGROUND WORKER: EXPIRE QR AFTER 5 MINS ---
 def expire_order_after_delay(
     chat_id, user_id, order_id, qr_msg_id, action_type="plan"
 ):
-  time.sleep(300)  # Exactly 5 Minutes (300 seconds)
+  time.sleep(300)  # 5 Minutes
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
@@ -92,22 +92,19 @@ def expire_order_after_delay(
       conn.commit()
   conn.close()
 
-  # Clear user state if active for this order
   if user_id in user_states and user_states[user_id].get("order_id") == order_id:
     del user_states[user_id]
 
-  # Delete QR Code message automatically
   try:
     bot.delete_message(chat_id, qr_msg_id)
   except Exception:
     pass
 
-  # Send expiration notification
   try:
     bot.send_message(
         chat_id,
-        "❌ *QR Code Expired!*\n5 minute ka samay samapt ho gaya hai aur QR"
-        " delete kar diya gaya hai. Kripya naya order banayein.",
+        "❌ *QR Code Expired!*\n5 minute ka samay samapt ho gaya hai. Kripya"
+        " naya order banayein.",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(),
     )
@@ -115,30 +112,29 @@ def expire_order_after_delay(
     pass
 
 
-# --- REPLY KEYBOARD (MAIN MENU) ---
+# --- KEYBOARDS ---
 def get_main_reply_keyboard():
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-  btn1 = types.KeyboardButton("🛒 PURCHASE KEY")
-  btn2 = types.KeyboardButton("🔐 MY KEYS")
-  btn3 = types.KeyboardButton("🤝 BUY RESELLERSHIP")
-  btn4 = types.KeyboardButton("♻ SETUP CHANNEL")
-  btn5 = types.KeyboardButton("💬 CONTACT SUPPORT")
-  markup.add(btn1, btn2)
-  markup.add(btn3)
-  markup.add(btn4, btn5)
+  markup.add(
+      types.KeyboardButton("🛒 PURCHASE KEY"), types.KeyboardButton("🔐 MY KEYS")
+  )
+  markup.add(types.KeyboardButton("🤝 BUY RESELLERSHIP"))
+  markup.add(
+      types.KeyboardButton("♻ SETUP CHANNEL"),
+      types.KeyboardButton("💬 CONTACT SUPPORT"),
+  )
   return markup
 
 
-# --- REPLY KEYBOARD (PAYMENT MENU - NEAR CHAT BAR) ---
 def get_payment_reply_keyboard():
   markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-  btn1 = types.KeyboardButton("✅ Payment Done")
-  btn2 = types.KeyboardButton("❌ Order Cancel")
-  markup.add(btn1, btn2)
+  markup.add(
+      types.KeyboardButton("✅ Payment Done"),
+      types.KeyboardButton("❌ Order Cancel"),
+  )
   return markup
 
 
-# --- CHECK IF USER IS ADMIN OR RESELLER ---
 def is_admin_or_reseller(user_id):
   if user_id == ADMIN_ID:
     return True
@@ -150,7 +146,7 @@ def is_admin_or_reseller(user_id):
   return res is not None
 
 
-# --- MAIN MENU (/start) ---
+# --- START COMMAND ---
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
   if message.from_user.id in user_states:
@@ -162,7 +158,7 @@ def send_welcome(message):
       "🛒 *PURCHASE KEY*\n"
       "🔐 *MY KEYS*\n"
       "🤝 *BUY RESELLERSHIP*\n"
-      "♻️ *SETUP CHANNEL*\n"
+      "♻️️ *SETUP CHANNEL*\n"
       "💬 *CONTACT SUPPORT*"
   )
   bot.send_message(
@@ -173,7 +169,7 @@ def send_welcome(message):
   )
 
 
-# --- REPLY MENU BUTTON HANDLERS ---
+# --- REPLY MENU HANDLERS ---
 @bot.message_handler(
     func=lambda message: message.text in [
         "🛒 PURCHASE KEY",
@@ -265,15 +261,13 @@ def handle_reply_menu(message):
     caption_text = (
         "💳 *SCAN & PAY (5 MINS EXPIRY)*\n\n"
         "• *LOADER:* Reseller Ship (1 Month)\n"
-        "• *PLAN:* 30 Days\n"
         f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
         f"• *UPI ID:* `{UPI_ID}`\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-        "1️⃣ Pehle payment karein aur 12-digit UTR yahin chat mein **send"
-        " karein**.\n"
-        "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
+        "1️⃣ Pehle payment karein aur **12-digit UTR** yahin chat mein send"
         " karein.\n"
-        "3️⃣ Cancel karne ke liye **❌ Order Cancel** dabayein."
+        "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
+        " karein."
     )
 
     sent_msg = bot.send_photo(
@@ -292,7 +286,6 @@ def handle_reply_menu(message):
         "qr_msg_id": sent_msg.message_id,
     }
 
-    # Start 5-minute background expiry thread
     threading.Thread(
         target=expire_order_after_delay,
         args=(
@@ -334,7 +327,7 @@ def handle_reply_menu(message):
     )
 
 
-# --- SELECT PLANS FOR CHOSEN LOADER WITH LIVE STOCK ---
+# --- SELECT PLANS ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("loader_"))
 def select_plan(call):
   loader_code = call.data.split("_")[1]
@@ -344,12 +337,11 @@ def select_plan(call):
   cursor = conn.cursor()
 
   markup = types.InlineKeyboardMarkup(row_width=2)
-
   plans = [
       ("⏱ 5 Hour - ₹30", "5 Hour", 30),
-      ("⏱️ 1 Day - ₹60", "1 Day", 60),
+      ("⏱ 1 Day - ₹60", "1 Day", 60),
       ("⏱️ 2 Day - ₹100", "2 Day", 100),
-      ("⏱️️ 3 Day - ₹180", "3 Day", 180),
+      ("⏱ 3 Day - ₹180", "3 Day", 180),
       ("⏱ 7 Day - ₹399", "7 Day", 399),
       ("⏱️ 30 Day - ₹699", "30 Day", 699),
   ]
@@ -361,7 +353,6 @@ def select_plan(call):
     )
     stock_count = cursor.fetchone()[0]
     button_title = f"{title} | Stock: {stock_count}"
-
     markup.add(
         types.InlineKeyboardButton(
             button_title, callback_data=f"plan_{loader_code}_{duration}_{amount}"
@@ -379,7 +370,7 @@ def select_plan(call):
   )
 
 
-# --- DYNAMIC QR CODE GENERATOR FOR PLANS ---
+# --- HANDLE PLAN & QR ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
 def handle_plan(call):
   parts = call.data.split("_")
@@ -412,11 +403,10 @@ def handle_plan(call):
       f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
       f"• *UPI ID:* `{UPI_ID}`\n\n"
       "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-      "1️⃣ Pehle payment karein aur 12-digit UTR yahin chat mein **send"
-      " karein**.\n"
-      "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
+      "1️⃣ Pehle payment karein aur **12-digit UTR** yahin chat mein send"
       " karein.\n"
-      "3️⃣ Cancel karne ke liye **❌ Order Cancel** dabayein."
+      "2️⃣ UTR send karne ke baad niche menu mein **✅ Payment Done** par click"
+      " karein."
   )
 
   sent_msg = bot.send_photo(
@@ -437,7 +427,6 @@ def handle_plan(call):
       "qr_msg_id": sent_msg.message_id,
   }
 
-  # Start 5-minute background expiry thread
   threading.Thread(
       target=expire_order_after_delay,
       args=(call.message.chat.id, user_id, order_id, sent_msg.message_id, "plan"),
@@ -445,180 +434,7 @@ def handle_plan(call):
   ).start()
 
 
-# --- HANDLE PAYMENT DONE BUTTON FROM MENU ---
-@bot.message_handler(func=lambda message: message.text == "✅ Payment Done")
-def handle_payment_done_button(message):
-  user_id = message.from_user.id
-
-  if user_id not in user_states:
-    bot.send_message(
-        message.chat.id,
-        "❌ Koi active payment session nahi mila. Kripya /start dabayein.",
-        reply_markup=get_main_reply_keyboard(),
-    )
-    return
-
-  state = user_states[user_id]
-
-  # Delete QR code photo message
-  if "qr_msg_id" in state:
-    try:
-      bot.delete_message(message.chat.id, state["qr_msg_id"])
-    except Exception:
-      pass
-
-  if time.time() - state["timestamp"] > 300:
-    del user_states[user_id]
-    bot.send_message(
-        message.chat.id,
-        "❌ *QR Expired!* 5 minute ho chuke hain.",
-        parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(),
-    )
-    return
-
-  order_id = state["order_id"]
-  action_type = state["type"]
-
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-
-  if action_type == "plan":
-    cursor.execute(
-        "SELECT utr, loader, duration, amount FROM orders WHERE id = ?",
-        (order_id,),
-    )
-    row = cursor.fetchone()
-  else:
-    cursor.execute(
-        "SELECT utr, amount FROM reseller_orders WHERE id = ?", (order_id,)
-    )
-    row = cursor.fetchone()
-
-  if not row or not row[0] or row[0].strip() == "":
-    conn.close()
-    bot.send_message(
-        message.chat.id,
-        "❌ Pehle 12-digit UTR chat mein send karein, fir Payment Done dabayein!",
-        reply_markup=get_payment_reply_keyboard(),
-    )
-    return
-
-  if action_type == "plan":
-    utr, loader_code, duration, amount = row
-    loader_display = get_loader_display_name(loader_code)
-
-    cursor.execute("UPDATE orders SET status = 'pending' WHERE id = ?", (order_id,))
-    conn.commit()
-    conn.close()
-
-    del user_states[user_id]
-
-    bot.send_message(
-        message.chat.id,
-        "⏳ UTR received! Verifying payment with admin. Please wait...",
-        reply_markup=get_main_reply_keyboard(),
-    )
-
-    admin_markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_approve = types.InlineKeyboardButton(
-        "✅ Approve", callback_data=f"app_{order_id}_{user_id}"
-    )
-    btn_reject = types.InlineKeyboardButton(
-        "❌ Reject", callback_data=f"rej_{order_id}_{user_id}"
-    )
-    admin_markup.add(btn_approve, btn_reject)
-
-    admin_text = (
-        f"🔔 *New Plan Payment Request!*\n\n"
-        f"👤 *User ID:* `{user_id}`\n"
-        f"📦 *Loader:* {loader_display} ({duration})\n"
-        f"💵 *Amount:* ₹{amount}\n"
-        f"💳 *UTR Number:* `{utr}`"
-    )
-    bot.send_message(
-        ADMIN_ID, admin_text, parse_mode="Markdown", reply_markup=admin_markup
-    )
-
-  else:
-    utr, amount = row
-    cursor.execute(
-        "UPDATE reseller_orders SET status = 'pending' WHERE id = ?", (order_id,)
-    )
-    conn.commit()
-    conn.close()
-
-    del user_states[user_id]
-
-    bot.send_message(
-        message.chat.id,
-        "⏳ Reseller UTR received! Admin verification in progress. Please wait...",
-        reply_markup=get_main_reply_keyboard(),
-    )
-
-    admin_markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_approve = types.InlineKeyboardButton(
-        "✅ Approve Reseller", callback_data=f"resapp_{order_id}_{user_id}"
-    )
-    btn_reject = types.InlineKeyboardButton(
-        "❌ Reject", callback_data=f"resrej_{order_id}_{user_id}"
-    )
-    admin_markup.add(btn_approve, btn_reject)
-
-    admin_text = (
-        f"⭐ *New Reseller Request!*\n\n"
-        f"👤 *User ID:* `{user_id}`\n"
-        f"💵 *Amount:* ₹{amount}\n"
-        f"💳 *UTR Number:* `{utr}`"
-    )
-    bot.send_message(
-        ADMIN_ID, admin_text, parse_mode="Markdown", reply_markup=admin_markup
-    )
-
-
-# --- HANDLE ORDER CANCEL BUTTON FROM MENU ---
-@bot.message_handler(func=lambda message: message.text == "❌ Order Cancel")
-def handle_cancel_button(message):
-  user_id = message.from_user.id
-
-  if user_id not in user_states:
-    bot.send_message(
-        message.chat.id,
-        "❌ Action cancelled.",
-        reply_markup=get_main_reply_keyboard(),
-    )
-    return
-
-  state = user_states[user_id]
-  order_id = state["order_id"]
-  action_type = state["type"]
-
-  # Delete QR code photo message
-  if "qr_msg_id" in state:
-    try:
-      bot.delete_message(message.chat.id, state["qr_msg_id"])
-    except Exception:
-      pass
-
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-  if action_type == "plan":
-    cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
-  else:
-    cursor.execute("DELETE FROM reseller_orders WHERE id = ?", (order_id,))
-  conn.commit()
-  conn.close()
-
-  del user_states[user_id]
-
-  bot.send_message(
-      message.chat.id,
-      "❌ Payment cancelled successfully.",
-      reply_markup=get_main_reply_keyboard(),
-  )
-
-
-# --- HANDLE UTR TEXT INPUT ---
+# --- HANDLE UTR TEXT INPUT (SECURE 12-DIGIT & DUPLICATE CHECK) ---
 @bot.message_handler(
     func=lambda message: message.from_user.id in user_states
     and user_states[message.from_user.id]["type"] in ["plan", "reseller"]
@@ -660,13 +476,48 @@ def handle_utr_text(message):
     return
 
   utr = message.text.strip()
-  if not utr.isalnum() or len(utr) < 8 or len(utr) > 25:
+
+  if not utr.isdigit() or len(utr) != 12:
     bot.reply_to(
         message,
-        "❌ *Invalid UTR/Transaction ID!*\nKripya sahi 12-digit UTR number bhejein:",
+        "❌ *Invalid UTR Format!*\nAsli UPI UTR **strictly 12-digit numeric"
+        " (numbers)** hota hai (Jaise: `432109876543`). Kripya sahi UTR"
+        " bhejein:",
         parse_mode="Markdown",
         reply_markup=get_payment_reply_keyboard(),
     )
+    return
+
+  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+  cursor = conn.cursor()
+  cursor.execute(
+      "SELECT id FROM orders WHERE utr = ? AND status = 'approved'", (utr,)
+  )
+  used_in_orders = cursor.fetchone()
+  cursor.execute(
+      "SELECT id FROM reseller_orders WHERE utr = ? AND status = 'approved'",
+      (utr,),
+  )
+  used_in_resellers = cursor.fetchone()
+  conn.close()
+
+  if used_in_orders or used_in_resellers:
+    bot.reply_to(
+        message,
+        "❌ *Fraud Alert!* Yeh UTR number pehle hi use kiya ja chuka hai. Dubara"
+        " use nahi ho sakta!",
+        parse_mode="Markdown",
+        reply_markup=get_payment_reply_keyboard(),
+    )
+    try:
+      bot.send_message(
+          ADMIN_ID,
+          f"🚨 *Fraud/Duplicate UTR Attempt!*\n👤 User ID: `{user_id}`\n💳 Tried"
+          f" to reuse UTR: `{utr}`",
+          parse_mode="Markdown",
+      )
+    except Exception:
+      pass
     return
 
   order_id = state["order_id"]
@@ -683,36 +534,74 @@ def handle_utr_text(message):
 
   bot.reply_to(
       message,
-      "✅ *UTR Saved Successfully!*\nAb niche menu mein diye gaye **✅ Payment Done** button par click karein.",
+      "✅ *UTR Verified & Saved Successfully!*\nAb niche menu mein diye gaye"
+      " **✅ Payment Done** button par click karein.",
       parse_mode="Markdown",
       reply_markup=get_payment_reply_keyboard(),
   )
 
 
-# --- ADMIN APPROVAL HANDLER ---
-@bot.callback_query_handler(
-    func=lambda call: call.data.startswith(("app_", "rej_", "resapp_", "resrej_"))
-)
-def handle_admin_action(call):
-  data = call.data.split("_")
-  action = data[0]
-  order_id = data[1]
-  user_id = int(data[2])
+# --- HANDLE PAYMENT DONE BUTTON (AUTO APPROVAL + ADMIN LOG) ---
+@bot.message_handler(func=lambda message: message.text == "✅ Payment Done")
+def handle_payment_done_button(message):
+  user_id = message.from_user.id
+
+  if user_id not in user_states:
+    bot.send_message(
+        message.chat.id,
+        "❌ Koi active payment session nahi mila. Kripya /start dabayein.",
+        reply_markup=get_main_reply_keyboard(),
+    )
+    return
+
+  state = user_states[user_id]
+
+  if "qr_msg_id" in state:
+    try:
+      bot.delete_message(message.chat.id, state["qr_msg_id"])
+    except Exception:
+      pass
+
+  if time.time() - state["timestamp"] > 300:
+    del user_states[user_id]
+    bot.send_message(
+        message.chat.id,
+        "❌ *QR Expired!* 5 minute ho chuke hain.",
+        parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard(),
+    )
+    return
+
+  order_id = state["order_id"]
+  action_type = state["type"]
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
 
-  if action == "app":
+  if action_type == "plan":
     cursor.execute(
-        "SELECT loader, duration FROM orders WHERE id = ?", (order_id,)
+        "SELECT utr, loader, duration, amount FROM orders WHERE id = ?",
+        (order_id,),
     )
-    order = cursor.fetchone()
-    if not order:
-      conn.close()
-      bot.answer_callback_query(call.id, "Order not found!", show_alert=True)
-      return
+    row = cursor.fetchone()
+  else:
+    cursor.execute(
+        "SELECT utr, amount FROM reseller_orders WHERE id = ?", (order_id,)
+    )
+    row = cursor.fetchone()
 
-    loader_code, duration = order[0], order[1]
+  if not row or not row[0] or len(row[0]) != 12:
+    conn.close()
+    bot.send_message(
+        message.chat.id,
+        "❌ Pehle apna valid 12-digit UTR chat mein send karein, fir Payment"
+        " Done dabayein!",
+        reply_markup=get_payment_reply_keyboard(),
+    )
+    return
+
+  if action_type == "plan":
+    utr, loader_code, duration, amount = row
     loader_display = get_loader_display_name(loader_code)
 
     cursor.execute(
@@ -726,8 +615,7 @@ def handle_admin_action(call):
       license_key = key_row[1]
 
       cursor.execute(
-          "UPDATE keys_table SET status = 'used', assigned_to = ? WHERE id ="
-          " ?",
+          "UPDATE keys_table SET status = 'used', assigned_to = ? WHERE id = ?",
           (user_id, key_id),
       )
       cursor.execute(
@@ -736,82 +624,123 @@ def handle_admin_action(call):
       conn.commit()
       conn.close()
 
+      del user_states[user_id]
+
+      # Send key to user
       bot.send_message(
-          user_id,
-          f"🎉 *Payment Verified Successfully!*\n\n• *Loader:* {loader_display}"
-          f" ({duration})\n• *Your License Key:*\n`{license_key}`",
+          message.chat.id,
+          f"🎉 *Payment Verified & Auto-Approved!*\n\n• *Loader:*"
+          f" {loader_display} ({duration})\n• *Your License"
+          f" Key:*\n`{license_key}`",
           parse_mode="Markdown",
+          reply_markup=get_main_reply_keyboard(),
       )
-      bot.edit_message_text(
-          "✅ *Approved & Key Sent Successfully!*",
-          call.message.chat.id,
-          call.message.message_id,
-          parse_mode="Markdown",
+
+      # --- INSTANT NOTIFICATION TO ADMIN CHAT ---
+      admin_text = (
+          f"⚡ *New Key Sold & Auto-Approved!*\n\n"
+          f"👤 *User ID:* `{user_id}`\n"
+          f"📦 *Loader:* {loader_display} ({duration})\n"
+          f"💵 *Amount:* ₹{amount}\n"
+          f"💳 *UTR Number:* `{utr}`\n"
+          f"🔑 *Key Given:* `{license_key}`"
       )
+      try:
+        bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+      except Exception:
+        pass
+
     else:
       conn.close()
-      bot.answer_callback_query(
-          call.id,
-          f"❌ Out of stock keys for duration ({duration})!",
-          show_alert=True,
+      bot.send_message(
+          message.chat.id,
+          f"❌ *Out of Stock!* Is duration ({duration}) ki keys khatam ho gayi"
+          " hain. Admin ko alert bhej diya gaya hai.",
+          parse_mode="Markdown",
+          reply_markup=get_main_reply_keyboard(),
       )
+      try:
+        bot.send_message(
+            ADMIN_ID,
+            f"⚠️ *Out of Stock Alert!*\nUser `{user_id}` tried to buy"
+            f" {loader_display} ({duration}) for ₹{amount} (UTR: `{utr}`), but"
+            " keys were out of stock!",
+            parse_mode="Markdown",
+        )
+      except Exception:
+        pass
 
-  elif action == "rej":
-    cursor.execute(
-        "UPDATE orders SET status = 'rejected' WHERE id = ?", (order_id,)
-    )
-    conn.commit()
-    conn.close()
-    bot.send_message(
-        user_id, "❌ Payment verification rejected. Contact support."
-    )
-    bot.edit_message_text(
-        "❌ *Payment Rejected!*",
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-    )
-
-  elif action == "resapp":
-    cursor.execute(
-        "INSERT OR IGNORE INTO resellers (user_id) VALUES (?)", (user_id,)
-    )
+  else:
+    utr, amount = row
     cursor.execute(
         "UPDATE reseller_orders SET status = 'approved' WHERE id = ?",
         (order_id,),
     )
-    conn.commit()
-    conn.close()
-
-    bot.send_message(
-        user_id,
-        "🎉 *Congratulations!*\nYour Reseller Ship has been approved by admin."
-        " Now you have reseller/admin access in the bot for 1 Month!",
-        parse_mode="Markdown",
-    )
-    bot.edit_message_text(
-        "⭐ *Reseller Approved Successfully!*",
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-    )
-
-  elif action == "resrej":
     cursor.execute(
-        "UPDATE reseller_orders SET status = 'rejected' WHERE id = ?",
-        (order_id,),
+        "INSERT OR IGNORE INTO resellers (user_id) VALUES (?)", (user_id,)
     )
     conn.commit()
     conn.close()
+
+    del user_states[user_id]
+
     bot.send_message(
-        user_id, "❌ Reseller payment verification was rejected."
-    )
-    bot.edit_message_text(
-        "❌ *Reseller Request Rejected!*",
-        call.message.chat.id,
-        call.message.message_id,
+        message.chat.id,
+        "🎉 *Reseller Ship Auto-Approved!*\nYour Reseller Ship has been activated"
+        " for 1 Month!",
         parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard(),
     )
+
+    admin_text = (
+        f"⭐ *New Reseller Auto-Approved!*\n\n👤 *User ID:* `{user_id}`\n💵"
+        f" *Amount:* ₹{amount}\n💳 *UTR Number:* `{utr}`"
+    )
+    try:
+      bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+    except Exception:
+      pass
+
+
+# --- CANCEL ORDER ---
+@bot.message_handler(func=lambda message: message.text == "❌ Order Cancel")
+def handle_cancel_button(message):
+  user_id = message.from_user.id
+
+  if user_id not in user_states:
+    bot.send_message(
+        message.chat.id,
+        "❌ Action cancelled.",
+        reply_markup=get_main_reply_keyboard(),
+    )
+    return
+
+  state = user_states[user_id]
+  order_id = state["order_id"]
+  action_type = state["type"]
+
+  if "qr_msg_id" in state:
+    try:
+      bot.delete_message(message.chat.id, state["qr_msg_id"])
+    except Exception:
+      pass
+
+  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+  cursor = conn.cursor()
+  if action_type == "plan":
+    cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+  else:
+    cursor.execute("DELETE FROM reseller_orders WHERE id = ?", (order_id,))
+  conn.commit()
+  conn.close()
+
+  del user_states[user_id]
+
+  bot.send_message(
+      message.chat.id,
+      "❌ Payment cancelled successfully.",
+      reply_markup=get_main_reply_keyboard(),
+  )
 
 
 # --- RESET KEY HANDLER ---
@@ -864,7 +793,7 @@ def add_key(message):
         f"* {duration}\n• *Key:* `{key}`",
         parse_mode="Markdown",
     )
-  except Exception as e:
+  except Exception:
     bot.reply_to(
         message,
         "❌ Format error!\nUse format: `/addkey [Loader] [Duration] [Key]`\nExample:"
@@ -873,7 +802,7 @@ def add_key(message):
     )
 
 
-# --- ADMIN COMMAND: SMART MULTI-DURATION BULK ADD (/bulkall) ---
+# --- ADMIN COMMAND: SMART BULK ADD (/bulkall) ---
 @bot.message_handler(commands=["bulkall"])
 def bulk_all_start(message):
   user_id = message.from_user.id
@@ -890,20 +819,14 @@ def bulk_all_start(message):
         message,
         f"📦 *Smart Multi-Duration Bulk Add Activated*\n*Loader:* {loader_code}\n\n"
         "Ab apne keys is format mein **ek line mein ek key** bhej dein:\n"
-        "`KEY | DURATION`\n\n"
-        "*Example (Mixed Durations):*\n"
-        "`KEY123ABC | 1 Day`\n"
-        "`KEY456DEF | 2 Day`\n"
-        "`KEY789GHI | 3 Day`\n"
-        "`KEY999XYZ | 30 Day`",
+        "`KEY | DURATION`",
         parse_mode="Markdown",
     )
     bot.register_next_step_handler(message, process_bulk_all_keys)
-  except Exception as e:
+  except Exception:
     bot.reply_to(
         message,
-        "❌ Format error!\nUse format: `/bulkall [Loader]`\nExample:"
-        " `/bulkall NEXA`",
+        "❌ Format error!\nUse format: `/bulkall [Loader]`",
         parse_mode="Markdown",
     )
 
@@ -921,7 +844,7 @@ def process_bulk_all_keys(message):
   lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
 
   if not lines:
-    bot.reply_to(message, "❌ Koi data nahi mila! Operation cancelled.")
+    bot.reply_to(message, "❌ Koi data nahi mila!")
     return
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -950,22 +873,18 @@ def process_bulk_all_keys(message):
   conn.commit()
   conn.close()
 
-  loader_display = get_loader_display_name(loader_code)
   bot.reply_to(
       message,
-      f"✅ *Bulk Add Completed!* 🎉\n• *Loader:* {loader_display}\n•"
-      f" *Successfully Added:* {success_count} keys\n• *Failed/Invalid"
-      f" Lines:* {failed_lines}",
-      parse_mode="Markdown",
+      f"✅ *Bulk Add Completed!* 🎉\n• Successfully Added: {success_count}\n•"
+      f" Failed: {failed_lines}",
   )
 
 
-# --- CLEAR WEBHOOK TO PREVENT 409 CONFLICT ERROR ---
 try:
   bot.remove_webhook()
   bot.delete_webhook(drop_pending_updates=True)
 except Exception:
   pass
 
-print("Bot is running with full features...")
+print("Bot is running securely with Live Admin Alerts...")
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
