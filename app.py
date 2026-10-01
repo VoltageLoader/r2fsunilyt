@@ -87,7 +87,6 @@ def is_admin_or_reseller(user_id):
 # --- MAIN MENU (/start) ---
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
-  # Clear state on start
   if message.from_user.id in user_states:
     del user_states[message.from_user.id]
 
@@ -119,7 +118,6 @@ def send_welcome(message):
     ]
 )
 def handle_reply_menu(message):
-  # Clear pending UTR step if user clicks a menu button
   if message.from_user.id in user_states:
     del user_states[message.from_user.id]
 
@@ -309,11 +307,11 @@ def handle_plan(call):
   bot.register_next_step_handler(call.message, process_utr)
 
 
-# --- UTR PROCESS & ADMIN NOTIFICATION ---
+# --- UTR PROCESS & ADMIN NOTIFICATION (STRICT VALIDATION) ---
 def process_utr(message):
   user_id = message.from_user.id
 
-  # If user sent a menu button or command during UTR input step, ignore UTR and let menu handler deal with it
+  # If user sent a menu button or command during UTR input step, handle it normally
   if message.text in [
       "🛒 PURCHASE KEY",
       "🔐 MY KEYS",
@@ -336,12 +334,14 @@ def process_utr(message):
 
   utr = message.text.strip()
 
-  # Strict UTR check (must be at least 8 chars and not random gibberish/menu text)
-  if len(utr) < 8 or len(utr) > 25:
+  # STRICT CHECK: Must be alphanumeric only (no spaces/symbols), length 8 to 25
+  if not utr.isalnum() or len(utr) < 8 or len(utr) > 25:
     bot.send_message(
         user_id,
-        "❌ Invalid UTR/Transaction ID! Please send a valid 12-digit UTR"
-        " number:",
+        "❌ *Invalid UTR/Transaction ID!*\n"
+        "UTR mein spaces ya special characters nahi hone chahiye.\n"
+        "Kripya sahi 12-digit UTR number bhejein:",
+        parse_mode="Markdown",
     )
     bot.register_next_step_handler(message, process_utr)
     return
@@ -349,7 +349,6 @@ def process_utr(message):
   state = user_states[user_id]
   action_type = state["type"]
 
-  # Clear state immediately so double texts don't re-trigger
   del user_states[user_id]
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -621,4 +620,3 @@ except Exception:
 
 print("Bot is running with full features...")
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
-  
