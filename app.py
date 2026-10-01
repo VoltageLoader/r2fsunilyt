@@ -27,7 +27,7 @@ def init_db():
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         loader TEXT,
                         duration TEXT,
-                        license_key TEXT,
+                        license_key TEXT UNIQUE,
                         status TEXT DEFAULT 'unused',
                         assigned_to INTEGER DEFAULT NULL)""")
   cursor.execute("""CREATE TABLE IF NOT EXISTS orders (
@@ -191,13 +191,14 @@ def super_admin_panel(message):
   markup = types.InlineKeyboardMarkup(row_width=1)
   markup.add(
       types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data="sa_add_single"),
-      types.InlineKeyboardButton("📦 BULK ADD KEYS", callback_data="sa_add_bulk"),
-      types.InlineKeyboardButton("❌ DELETE KEY", callback_data="sa_del_prompt"),
+      types.InlineKeyboardButton("📦 ADD BULK KEY", callback_data="sa_add_bulk"),
+      types.InlineKeyboardButton("❌ DELETE SINGLE KEY", callback_data="sa_del_single"),
+      types.InlineKeyboardButton("🗑️ DELETE BULK KEYS", callback_data="sa_del_bulk"),
       types.InlineKeyboardButton("📋 SHOW ALL KEYS", callback_data="sa_show_keys"),
   )
   bot.send_message(
       message.chat.id,
-      "👑 *SUPER ADMIN PANEL*\n\nNiche diye gaye options mein se select karein:",
+      "👑 *SUPER ADMIN PANEL*\n\nNiche diye gaye options mein se select karein (Koi command type karne ki zarurat nahi hai):",
       parse_mode="Markdown",
       reply_markup=markup,
   )
@@ -212,30 +213,142 @@ def super_admin_callbacks(call):
 
   data = call.data
 
+  # --- ADD SINGLE FLOW ---
   if data == "sa_add_single":
     bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("⚡ VOLTAGE LOADER", callback_data="sa_sldr_Voltage"),
+        types.InlineKeyboardButton("🔥 NICE X NEXA", callback_data="sa_sldr_NEXA"),
+    )
+    bot.edit_message_text(
+        "➕ *ADD SINGLE KEY*\n\nPehle loader select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif data.startswith("sa_sldr_"):
+    loader_code = data.split("_")[2]
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    for d in durations:
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_sdur_{loader_code}_{d}"))
+    bot.edit_message_text(
+        f"➕ *ADD SINGLE KEY*\n\nLoader: *{get_loader_display_name(loader_code)}*\nAb duration select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif data.startswith("sa_sdur_"):
+    parts = data.split("_")
+    loader_code = parts[2]
+    duration = parts[3]
+    bot.answer_callback_query(call.id)
+    user_states[ADMIN_ID] = {"type": "waiting_single_key", "loader": loader_code, "duration": duration}
     bot.send_message(
         call.message.chat.id,
-        "➕ *SINGLE KEY ADD KARNE KA FORMAT:*\n\n`/addkey [LOADER] [DURATION] [KEY]`\n\n*Example:* `/addkey NEXA 1 Day NICE-KEY-123`",
+        f"➕ *ADD SINGLE KEY*\n\nLoader: *{get_loader_display_name(loader_code)}* | Duration: *{duration}*\n\n💬 Ab apni **License Key** yahan chat mein send karein:",
         parse_mode="Markdown",
     )
 
+  # --- ADD BULK FLOW ---
   elif data == "sa_add_bulk":
     bot.answer_callback_query(call.id)
-    bot.send_message(
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("⚡ VOLTAGE LOADER", callback_data="sa_bldr_Voltage"),
+        types.InlineKeyboardButton("🔥 NICE X NEXA", callback_data="sa_bldr_NEXA"),
+    )
+    bot.edit_message_text(
+        "📦 *ADD BULK KEYS*\n\nPehle loader select karein:",
         call.message.chat.id,
-        "📦 *BULK KEYS ADD KARNE KA TARIKA:*\n\nCommand bhejein: `/bulkall [LOADER]`\n*Example:* `/bulkall NEXA`\n\nUske baad bot ko lines mein keys bhejein: `KEY | DURATION`",
+        call.message.message_id,
         parse_mode="Markdown",
+        reply_markup=markup,
     )
 
-  elif data == "sa_del_prompt":
+  elif data.startswith("sa_bldr_"):
+    loader_code = data.split("_")[2]
     bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    for d in durations:
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_bdur_{loader_code}_{d}"))
+    bot.edit_message_text(
+        f"📦 *ADD BULK KEYS*\n\nLoader: *{get_loader_display_name(loader_code)}*\nAb duration select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif data.startswith("sa_bdur_"):
+    parts = data.split("_")
+    loader_code = parts[2]
+    duration = parts[3]
+    bot.answer_callback_query(call.id)
+    user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "loader": loader_code, "duration": duration}
     bot.send_message(
         call.message.chat.id,
-        "❌ *KEY DELETE KARNE KA FORMAT:*\n\n`/delkey [KEY_ID]`\n\n*Example:* `/delkey 5`\n*(Pehle 'SHOW ALL KEYS' par click karke Key ID dekh lein)*",
+        f"📦 *ADD BULK KEYS*\n\nLoader: *{get_loader_display_name(loader_code)}* | Duration: *{duration}*\n\n💬 Ab multiple keys **ek line mein ek key** karke yahan paste/send karein:",
         parse_mode="Markdown",
     )
 
+  # --- DELETE SINGLE FLOW ---
+  elif data == "sa_del_single":
+    bot.answer_callback_query(call.id)
+    user_states[ADMIN_ID] = {"type": "waiting_del_id"}
+    bot.send_message(
+        call.message.chat.id,
+        "❌ *DELETE SINGLE KEY*\n\n💬 Jis key ko delete karna hai uska **Key ID** yahan send karein (ID dekhne ke liye 'SHOW ALL KEYS' use karein):",
+        parse_mode="Markdown",
+    )
+
+  # --- DELETE BULK FLOW ---
+  elif data == "sa_del_bulk":
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📋 PASTE KEYS TO DELETE IN BULK", callback_data="sa_del_paste_bulk"),
+        types.InlineKeyboardButton("🗑️ DELETE ALL UNUSED KEYS", callback_data="sa_del_all_unused"),
+    )
+    bot.edit_message_text(
+        "🗑️ *DELETE BULK OPTIONS*\n\nOption select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+  elif data == "sa_del_paste_bulk":
+    bot.answer_callback_query(call.id)
+    user_states[ADMIN_ID] = {"type": "waiting_bulk_del"}
+    bot.send_message(
+        call.message.chat.id,
+        "🗑️ *DELETE BULK KEYS BY LIST*\n\n💬 Jin keys ko delete karna hai unhe **ek line mein ek key** karke yahan send karein:",
+        parse_mode="Markdown",
+    )
+
+  elif data == "sa_del_all_unused":
+    bot.answer_callback_query(call.id)
+    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM keys_table WHERE status = 'unused'")
+    deleted_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    bot.send_message(
+        call.message.chat.id,
+        f"✅ Saari unused keys successfully delete kar di gayi hain! (Total deleted: `{deleted_count}`)",
+        parse_mode="Markdown",
+    )
+
+  # --- SHOW ALL KEYS ---
   elif data == "sa_show_keys":
     bot.answer_callback_query(call.id)
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -283,6 +396,155 @@ def super_admin_callbacks(call):
       )
     except Exception:
       pass
+
+
+# --- ADMIN STATE INPUT HANDLER (NO COMMANDS NEEDED) ---
+@bot.message_handler(
+    func=lambda message: message.from_user.id == ADMIN_ID
+    and message.from_user.id in user_states
+    and user_states[message.from_user.id]["type"] in [
+        "waiting_single_key",
+        "waiting_bulk_keys",
+        "waiting_del_id",
+        "waiting_bulk_del",
+    ]
+)
+def handle_admin_state_input(message):
+  user_id = message.from_user.id
+  state = user_states[user_id]
+  action_type = state["type"]
+  text = message.text.strip()
+
+  if text.startswith("/") or text in [
+      "🛒 PURCHASE KEY",
+      "🔐 MY KEYS",
+      "🤝 BUY RESELLERSHIP",
+      "♻️ SETUP CHANNEL",
+      "💬 CONTACT SUPPORT",
+      "🔚 BACK",
+      "👑 SUPER ADMIN",
+  ]:
+    del user_states[user_id]
+    if text == "👑 SUPER ADMIN":
+      super_admin_panel(message)
+    elif text == "🔚 BACK":
+      handle_back_button(message)
+    else:
+      handle_reply_menu(message)
+    return
+
+  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+  cursor = conn.cursor()
+
+  if action_type == "waiting_single_key":
+    loader_code = state["loader"]
+    duration = state["duration"]
+    license_key = text
+    loader_display = get_loader_display_name(loader_code)
+
+    try:
+      cursor.execute(
+          "INSERT INTO keys_table (loader, duration, license_key, status)"
+          " VALUES (?, ?, ?, 'unused')",
+          (loader_code, duration, license_key),
+      )
+      conn.commit()
+      conn.close()
+      del user_states[user_id]
+      bot.reply_to(
+          message,
+          f"✅ *SINGLE KEY ADDED SUCCESSFULLY!*\n\n• *LOADER:*"
+          f" {loader_display}\n• *DURATION:* {duration}\n• *KEY:*"
+          f" `{license_key}`",
+          parse_mode="Markdown",
+      )
+    except sqlite3.IntegrityError:
+      conn.close()
+      bot.reply_to(
+          message,
+          "❌ *DUPLICATE KEY ERROR!*\nYeh license key pehle se database mein"
+          " mojood hai. Duplicate key add nahi ho sakti!",
+          parse_mode="Markdown",
+      )
+
+  elif action_type == "waiting_bulk_keys":
+    loader_code = state["loader"]
+    duration = state["duration"]
+    loader_display = get_loader_display_name(loader_code)
+
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+      conn.close()
+      bot.reply_to(message, "❌ Koi keys nahi mili!")
+      return
+
+    added_count = 0
+    duplicate_count = 0
+
+    for key in lines:
+      try:
+        cursor.execute(
+            "INSERT INTO keys_table (loader, duration, license_key, status)"
+            " VALUES (?, ?, ?, 'unused')",
+            (loader_code, duration, key),
+        )
+        added_count += 1
+      except sqlite3.IntegrityError:
+        duplicate_count += 1
+
+    conn.commit()
+    conn.close()
+    del user_states[user_id]
+
+    bot.reply_to(
+        message,
+        f"📦 *BULK KEYS ADDED REPORT*\n\n• *LOADER:* {loader_display}"
+        f" ({duration})\n• *Successfully Added:* `{added_count}`\n• *Duplicates"
+        f" Skipped:* `{duplicate_count}`",
+        parse_mode="Markdown",
+    )
+
+  elif action_type == "waiting_del_id":
+    try:
+      key_id = int(text)
+      cursor.execute("DELETE FROM keys_table WHERE id = ?", (key_id,))
+      conn.commit()
+      conn.close()
+      del user_states[user_id]
+      bot.reply_to(
+          message,
+          f"✅ Key ID `{key_id}` successfully delete kar di gayi hai!",
+          parse_mode="Markdown",
+      )
+    except Exception:
+      conn.close()
+      bot.reply_to(
+          message,
+          "❌ Sahi Key ID enter karein (Sirf number hona chahiye, jaise: `5`).",
+          parse_mode="Markdown",
+      )
+
+  elif action_type == "waiting_bulk_del":
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+      conn.close()
+      bot.reply_to(message, "❌ Koi keys nahi mili!")
+      return
+
+    deleted_count = 0
+    for key in lines:
+      cursor.execute("DELETE FROM keys_table WHERE license_key = ?", (key,))
+      deleted_count += cursor.rowcount
+
+    conn.commit()
+    conn.close()
+    del user_states[user_id]
+
+    bot.reply_to(
+        message,
+        f"🗑️ *BULK DELETE REPORT*\n\n• *Total Keys Deleted:* `{deleted_count}`",
+        parse_mode="Markdown",
+    )
 
 
 # --- REPLY MENU HANDLERS ---
@@ -1065,151 +1327,6 @@ def handle_reset_key(call):
       ADMIN_ID,
       f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID:"
       f" `{key_id}`",
-      parse_mode="Markdown",
-  )
-
-
-# --- ADMIN COMMAND: ADD SINGLE KEY (/addkey) ---
-@bot.message_handler(commands=["addkey"])
-def add_key(message):
-  user_id = message.from_user.id
-  if not is_admin_or_reseller(user_id):
-    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
-    return
-
-  try:
-    parts = message.text.split(" ", 3)
-    loader_code = parts[1]
-    duration = parts[2]
-    key = parts[3].strip()
-    loader_display = get_loader_display_name(loader_code)
-
-    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO keys_table (loader, duration, license_key, status) VALUES"
-        " (?, ?, ?, 'unused')",
-        (loader_code, duration, key),
-    )
-    conn.commit()
-    conn.close()
-
-    bot.reply_to(
-        message,
-        f"✅ KEY ADDED SUCCESSFULLY!\n• *LOADER:* {loader_display}\n• *DURATION:"
-        f"* {duration}\n• *KEY:* `{key}`",
-        parse_mode="Markdown",
-    )
-  except Exception:
-    bot.reply_to(
-        message,
-        "❌ FORMAT ERROR!\nUSE FORMAT: `/addkey [LOADER] [DURATION] [KEY]`\nEXAMPLE:"
-        " `/addkey NEXA 1 Day NICE-KEY-123`",
-        parse_mode="Markdown",
-    )
-
-
-# --- ADMIN COMMAND: DELETE KEY (/delkey) ---
-@bot.message_handler(commands=["delkey"])
-def delete_key(message):
-  user_id = message.from_user.id
-  if not is_admin_or_reseller(user_id):
-    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
-    return
-
-  try:
-    parts = message.text.split(" ", 1)
-    key_id = int(parts[1].strip())
-
-    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM keys_table WHERE id = ?", (key_id,))
-    conn.commit()
-    conn.close()
-
-    bot.reply_to(
-        message,
-        f"✅ KEY ID `{key_id}` SUCCESSFULLY DELETE HO GAYI HAI!",
-        parse_mode="Markdown",
-    )
-  except Exception:
-    bot.reply_to(
-        message,
-        "❌ FORMAT ERROR!\nUSE FORMAT: `/delkey [KEY_ID]`\nEXAMPLE: `/delkey 5`",
-        parse_mode="Markdown",
-    )
-
-
-# --- ADMIN COMMAND: SMART BULK ADD (/bulkall) ---
-@bot.message_handler(commands=["bulkall"])
-def bulk_all_start(message):
-  user_id = message.from_user.id
-  if not is_admin_or_reseller(user_id):
-    bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED TO USE THIS COMMAND!")
-    return
-
-  try:
-    parts = message.text.split(" ", 1)
-    loader_code = parts[1].strip()
-
-    user_states[user_id] = {"type": "bulk_all", "loader": loader_code}
-    bot.reply_to(
-        message,
-        f"📦 *SMART MULTI-DURATION BULK ADD ACTIVATED*\n*LOADER:* {loader_code}\n\n"
-        "AB APNE KEYS IS FORMAT MEIN **EK LINE MEIN EK KEY** BHEJ DEIN:\n"
-        "`KEY | DURATION`",
-        parse_mode="Markdown",
-    )
-    bot.register_next_step_handler(message, process_bulk_all_keys)
-  except Exception:
-    bot.reply_to(
-        message,
-        "❌ FORMAT ERROR!\nUSE FORMAT: `/bulkall [LOADER]`",
-        parse_mode="Markdown",
-    )
-
-
-def process_bulk_all_keys(message):
-  user_id = message.from_user.id
-  if user_id not in user_states or user_states[user_id]["type"] != "bulk_all":
-    return
-
-  state = user_states[user_id]
-  loader_code = state["loader"]
-  del user_states[user_id]
-
-  raw_text = message.text
-  lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-
-  if not lines:
-    bot.reply_to(message, "❌ KOI DATA NAHI MILA!")
-    return
-
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-
-  added_count = 0
-  for line in lines:
-    if "|" in line:
-      parts = line.split("|", 1)
-      key = parts[0].strip()
-      duration = parts[1].strip()
-      if key and duration:
-        cursor.execute(
-            "INSERT INTO keys_table (loader, duration, license_key, status)"
-            " VALUES (?, ?, ?, 'unused')",
-            (loader_code, duration, key),
-        )
-        added_count += 1
-
-  conn.commit()
-  conn.close()
-
-  loader_display = get_loader_display_name(loader_code)
-  bot.reply_to(
-      message,
-      f"✅ *BULK KEYS ADDED SUCCESSFULLY!*\n• *LOADER:*"
-      f" {loader_display}\n• *TOTAL KEYS ADDED:* `{added_count}`",
       parse_mode="Markdown",
   )
 
