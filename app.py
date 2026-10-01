@@ -120,9 +120,15 @@ def get_main_reply_keyboard():
   )
   markup.add(types.KeyboardButton("🤝 BUY RESELLERSHIP"))
   markup.add(
-      types.KeyboardButton("♻ SETUP CHANNEL"),
+      types.KeyboardButton("♻️ SETUP CHANNEL"),
       types.KeyboardButton("💬 CONTACT SUPPORT"),
   )
+  return markup
+
+
+def get_back_reply_keyboard():
+  markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+  markup.add(types.KeyboardButton("🔚 Back"))
   return markup
 
 
@@ -158,12 +164,32 @@ def send_welcome(message):
       "🛒 *PURCHASE KEY*\n"
       "🔐 *MY KEYS*\n"
       "🤝 *BUY RESELLERSHIP*\n"
-      "♻️️ *SETUP CHANNEL*\n"
+      "♻️ *SETUP CHANNEL*\n"
       "💬 *CONTACT SUPPORT*"
   )
   bot.send_message(
       message.chat.id,
       welcome_text,
+      parse_mode="Markdown",
+      reply_markup=get_main_reply_keyboard(),
+  )
+
+
+# --- BACK BUTTON HANDLER ---
+@bot.message_handler(func=lambda message: message.text == "🔚 Back")
+def handle_back_button(message):
+  user_id = message.from_user.id
+  if user_id in user_states:
+    if "qr_msg_id" in user_states[user_id]:
+      try:
+        bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
+      except Exception:
+        pass
+    del user_states[user_id]
+
+  bot.send_message(
+      message.chat.id,
+      "🏠 *Main Menu:*",
       parse_mode="Markdown",
       reply_markup=get_main_reply_keyboard(),
   )
@@ -198,6 +224,12 @@ def handle_reply_menu(message):
         "📦 *Select Loader*\n\nApna pasandida loader select karein:",
         parse_mode="Markdown",
         reply_markup=markup,
+    )
+    # Switch keyboard to Back button
+    bot.send_message(
+        message.chat.id,
+        "👇 Piche jaane ke liye niche **🔚 Back** dabayein:",
+        reply_markup=get_back_reply_keyboard(),
     )
 
   elif message.text == "🔐 MY KEYS":
@@ -448,6 +480,7 @@ def handle_utr_text(message):
       "🤝 BUY RESELLERSHIP",
       "♻️ SETUP CHANNEL",
       "💬 CONTACT SUPPORT",
+      "🔚 Back",
   ] or message.text.startswith("/"):
     if user_id in user_states and "qr_msg_id" in user_states[user_id]:
       try:
@@ -455,7 +488,10 @@ def handle_utr_text(message):
       except Exception:
         pass
     del user_states[user_id]
-    handle_reply_menu(message)
+    if message.text == "🔚 Back":
+      handle_back_button(message)
+    else:
+      handle_reply_menu(message)
     return
 
   state = user_states[user_id]
@@ -626,7 +662,6 @@ def handle_payment_done_button(message):
 
       del user_states[user_id]
 
-      # Send key to user
       bot.send_message(
           message.chat.id,
           f"🎉 *Payment Verified & Auto-Approved!*\n\n• *Loader:*"
@@ -636,7 +671,6 @@ def handle_payment_done_button(message):
           reply_markup=get_main_reply_keyboard(),
       )
 
-      # --- INSTANT NOTIFICATION TO ADMIN CHAT ---
       admin_text = (
           f"⚡ *New Key Sold & Auto-Approved!*\n\n"
           f"👤 *User ID:* `{user_id}`\n"
@@ -886,5 +920,5 @@ try:
 except Exception:
   pass
 
-print("Bot is running securely with Live Admin Alerts...")
+print("Bot is running with Back Button navigation...")
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
