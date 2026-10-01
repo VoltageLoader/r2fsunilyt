@@ -126,17 +126,6 @@ def get_payment_reply_keyboard():
   return markup
 
 
-def is_admin_or_reseller(user_id):
-  if user_id == ADMIN_ID:
-    return True
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-  cursor.execute("SELECT user_id FROM resellers WHERE user_id = ?", (user_id,))
-  res = cursor.fetchone()
-  conn.close()
-  return res is not None
-
-
 # --- START COMMAND ---
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
@@ -463,7 +452,7 @@ def handle_admin_state_input(message):
       bot.reply_to(
           message,
           "❌ *DUPLICATE KEY ERROR!*\nYeh license key pehle se database mein"
-          " mojood hai. Duplicate key add nahi ho sakti!",
+          " mojood hai. 100% exact duplicate key add nahi ho sakti!",
           parse_mode="Markdown",
       )
 
@@ -499,8 +488,8 @@ def handle_admin_state_input(message):
     bot.reply_to(
         message,
         f"📦 *BULK KEYS ADDED REPORT*\n\n• *LOADER:* {loader_display}"
-        f" ({duration})\n• *Successfully Added:* `{added_count}`\n• *Duplicates"
-        f" Skipped:* `{duplicate_count}`",
+        f" ({duration})\n• *Successfully Added:* `{added_count}`\n• *Exact"
+        f" Duplicates Skipped:* `{duplicate_count}`",
         parse_mode="Markdown",
     )
 
@@ -724,8 +713,8 @@ def select_plan(call):
 
   for title, duration, amount in plans:
     cursor.execute(
-        "SELECT COUNT(*) FROM keys_table WHERE duration = ? AND status = 'unused'",
-        (duration,),
+        "SELECT COUNT(*) FROM keys_table WHERE loader = ? AND duration = ? AND status = 'unused'",
+        (loader_code, duration),
     )
     stock_count = cursor.fetchone()[0]
     button_title = f"{title} | STOCK: {stock_count}"
@@ -1101,9 +1090,9 @@ def admin_approval_callback(call):
 
     if action == "app":
       cursor.execute(
-          "SELECT id, license_key FROM keys_table WHERE duration = ? AND status"
+          "SELECT id, license_key FROM keys_table WHERE loader = ? AND duration = ? AND status"
           " = 'unused' LIMIT 1",
-          (duration,),
+          (loader_code, duration),
       )
       key_row = cursor.fetchone()
 
@@ -1111,7 +1100,7 @@ def admin_approval_callback(call):
         conn.close()
         bot.answer_callback_query(
             call.id,
-            "❌ OUT OF STOCK! KEYS KHATAM HO GAYI HAIN.",
+            "❌ OUT OF STOCK! ISS LOADER/DURATION KI KEYS KHATAM HO GAYI HAIN.",
             show_alert=True,
         )
         return
