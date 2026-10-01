@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import threading
 import time
@@ -225,7 +226,6 @@ def handle_reply_menu(message):
         parse_mode="Markdown",
         reply_markup=markup,
     )
-    # Switch keyboard to Back button
     bot.send_message(
         message.chat.id,
         "👇 Piche jaane ke liye niche **🔚 Back** dabayein:",
@@ -466,7 +466,7 @@ def handle_plan(call):
   ).start()
 
 
-# --- HANDLE UTR TEXT INPUT (SECURE 12-DIGIT & DUPLICATE CHECK) ---
+# --- HANDLE UTR TEXT INPUT (SMART REGEX EXTRACTION) ---
 @bot.message_handler(
     func=lambda message: message.from_user.id in user_states
     and user_states[message.from_user.id]["type"] in ["plan", "reseller"]
@@ -511,18 +511,26 @@ def handle_utr_text(message):
     )
     return
 
-  utr = message.text.strip()
+  raw_text = message.text.strip()
 
-  if not utr.isdigit() or len(utr) != 12:
-    bot.reply_to(
-        message,
-        "❌ *Invalid UTR Format!*\nAsli UPI UTR **strictly 12-digit numeric"
-        " (numbers)** hota hai (Jaise: `432109876543`). Kripya sahi UTR"
-        " bhejein:",
-        parse_mode="Markdown",
-        reply_markup=get_payment_reply_keyboard(),
-    )
-    return
+  # SMART REGEX: Extracts exact 12-digit number from any message or pasted text
+  match = re.search(r"\b\d{12}\b", raw_text)
+  if match:
+    utr = match.group(0)
+  else:
+    # Fallback: remove all non-digit chars and check if it's 12 digits
+    cleaned = "".join(filter(str.isdigit, raw_text))
+    if len(cleaned) == 12:
+      utr = cleaned
+    else:
+      bot.reply_to(
+          message,
+          "❌ *Invalid UTR Format!*\nAapka UTR sahi format mein nahi mila."
+          " Kripya apna **12-digit numeric UTR** dobara bhejein:",
+          parse_mode="Markdown",
+          reply_markup=get_payment_reply_keyboard(),
+      )
+      return
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
@@ -881,44 +889,5 @@ def process_bulk_all_keys(message):
     bot.reply_to(message, "❌ Koi data nahi mila!")
     return
 
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-
-  success_count = 0
-  failed_lines = 0
-
-  for line in lines:
-    if "|" in line:
-      parts = line.split("|", 1)
-      key = parts[0].strip()
-      duration = parts[1].strip()
-      if key and duration:
-        cursor.execute(
-            "INSERT INTO keys_table (loader, duration, license_key, status)"
-            " VALUES (?, ?, ?, 'unused')",
-            (loader_code, duration, key),
-        )
-        success_count += 1
-      else:
-        failed_lines += 1
-    else:
-      failed_lines += 1
-
-  conn.commit()
-  conn.close()
-
-  bot.reply_to(
-      message,
-      f"✅ *Bulk Add Completed!* 🎉\n• Successfully Added: {success_count}\n•"
-      f" Failed: {failed_lines}",
-  )
-
-
-try:
-  bot.remove_webhook()
-  bot.delete_webhook(drop_pending_updates=True)
-except Exception:
-  pass
-
-print("Bot is running with Back Button navigation...")
-bot.infinity_polling(timeout=60, long_polling_timeout=60)
+  conn = sqlite3.connect("db", check_same_thread=False)  # or bot_database.db
+  # Wait, let's keep it consistent: sqlite3.connect("bot_database.db", check_same_thread=False)
