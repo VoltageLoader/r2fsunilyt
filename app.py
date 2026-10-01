@@ -4,12 +4,12 @@ import telebot
 from telebot import types
 
 # --- CONFIGURATION ---
-TOKEN = "8052389503:AAG8O3ZH4NCJJrW7erp4u9W3IfKm4z18itk"  # Apna Telegram Bot Token
-ADMIN_ID = 6795305850  # Apni Telegram Numeric Chat ID
-UPI_ID = "8905094188@ybl"  # Aapka UPI ID
-UPI_NAME = "Nexa Cyber"  # App ya Store ka Naam
-OWNER_USERNAME = "R2FSUNILYT"  # Owner ka Telegram username
-SETUP_CHANNEL_URL = "https://t.me/VoltageLoader"  # Setup channel link
+TOKEN = "8052389503:AAG8O3ZH4NCJJrW7erp4u9W3IfKm4z18itk"
+ADMIN_ID = 6795305850
+UPI_ID = "8905094188@ybl"
+UPI_NAME = "Nexa Cyber"
+OWNER_USERNAME = "R2FSUNILYT"
+SETUP_CHANNEL_URL = "https://t.me/VoltageLoader"
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -311,7 +311,6 @@ def handle_plan(call):
 def process_utr(message):
   user_id = message.from_user.id
 
-  # If user sent a menu button or command during UTR input step, handle it normally
   if message.text in [
       "🛒 PURCHASE KEY",
       "🔐 MY KEYS",
@@ -334,7 +333,6 @@ def process_utr(message):
 
   utr = message.text.strip()
 
-  # STRICT CHECK: Must be alphanumeric only (no spaces/symbols), length 8 to 25
   if not utr.isalnum() or len(utr) < 8 or len(utr) > 25:
     bot.send_message(
         user_id,
@@ -348,7 +346,6 @@ def process_utr(message):
 
   state = user_states[user_id]
   action_type = state["type"]
-
   del user_states[user_id]
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
@@ -571,7 +568,7 @@ def handle_reset_key(call):
   )
 
 
-# --- ADMIN / RESELLER COMMAND: ADD KEYS (/addkey) ---
+# --- ADMIN COMMAND: ADD SINGLE KEY (/addkey) ---
 @bot.message_handler(commands=["addkey"])
 def add_key(message):
   user_id = message.from_user.id
@@ -609,6 +606,93 @@ def add_key(message):
         " `/addkey NEXA 5 Hour NICE-KEY-123`",
         parse_mode="Markdown",
     )
+
+
+# --- ADMIN COMMAND: SMART MULTI-DURATION BULK ADD (/bulkall) ---
+@bot.message_handler(commands=["bulkall"])
+def bulk_all_start(message):
+  user_id = message.from_user.id
+  if not is_admin_or_reseller(user_id):
+    bot.reply_to(message, "❌ You are not authorized to use this command!")
+    return
+
+  try:
+    parts = message.text.split(" ", 1)
+    loader_code = parts[1].strip()
+
+    user_states[user_id] = {"type": "bulk_all", "loader": loader_code}
+    bot.reply_to(
+        message,
+        f"📦 *Smart Multi-Duration Bulk Add Activated*\n*Loader:* {loader_code}\n\n"
+        "Ab apne keys is format mein **ek line mein ek key** bhej dein:\n"
+        "`KEY | DURATION`\n\n"
+        "*Example (Mixed Durations):*\n"
+        "`KEY123ABC | 1 Day`\n"
+        "`KEY456DEF | 2 Day`\n"
+        "`KEY789GHI | 3 Day`\n"
+        "`KEY999XYZ | 30 Day`",
+        parse_mode="Markdown",
+    )
+    bot.register_next_step_handler(message, process_bulk_all_keys)
+  except Exception as e:
+    bot.reply_to(
+        message,
+        "❌ Format error!\nUse format: `/bulkall [Loader]`\nExample:"
+        " `/bulkall NEXA`",
+        parse_Mode="Markdown",
+    )
+
+
+def process_bulk_all_keys(message):
+  user_id = message.from_user.id
+  if user_id not in user_states or user_states[user_id]["type"] != "bulk_all":
+    return
+
+  state = user_states[user_id]
+  loader_code = state["loader"]
+  del user_states[user_id]
+
+  raw_text = message.text
+  lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+
+  if not lines:
+    bot.reply_to(message, "❌ Koi data nahi mila! Operation cancelled.")
+    return
+
+  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+  cursor = conn.cursor()
+
+  success_count = 0
+  failed_lines = 0
+
+  for line in lines:
+    if "|" in line:
+      parts = line.split("|", 1)
+      key = parts[0].strip()
+      duration = parts[1].strip()
+      if key and duration:
+        cursor.execute(
+            "INSERT INTO keys_table (loader, duration, license_key, status)"
+            " VALUES (?, ?, ?, 'unused')",
+            (loader_code, duration, key),
+        )
+        success_count += 1
+      else:
+        failed_lines += 1
+    else:
+      failed_lines += 1
+
+  conn.commit()
+  conn.close()
+
+  loader_display = get_loader_display_name(loader_code)
+  bot.reply_to(
+      message,
+      f"✅ *Bulk Add Completed!* 🎉\n• *Loader:* {loader_display}\n•"
+      f" *Successfully Added:* {success_count} keys\n• *Failed/Invalid"
+      f" Lines:* {failed_lines}",
+      parse_mode="Markdown",
+  )
 
 
 # --- CLEAR WEBHOOK TO PREVENT 409 CONFLICT ERROR ---
