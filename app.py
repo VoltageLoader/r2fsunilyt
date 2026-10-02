@@ -25,7 +25,6 @@ def init_db():
   cursor = conn.cursor()
   cursor.execute("""CREATE TABLE IF NOT EXISTS keys_table (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        loader TEXT,
                         duration TEXT,
                         license_key TEXT UNIQUE,
                         status TEXT DEFAULT 'unused',
@@ -34,7 +33,6 @@ def init_db():
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER,
                         utr TEXT,
-                        loader TEXT,
                         duration TEXT,
                         amount INTEGER,
                         created_at REAL,
@@ -56,13 +54,6 @@ init_db()
 
 # User state tracking dictionary
 user_states = {}
-
-
-# --- HELPER: GET LOADER DISPLAY NAME ---
-def get_loader_display_name(loader_code):
-  if loader_code == "NEXA":
-    return "NICE X NEXA"
-  return loader_code
 
 
 # --- BACKGROUND WORKER: SEND TIMEOUT MESSAGE AFTER 5 MINS ---
@@ -187,7 +178,7 @@ def super_admin_panel(message):
   )
   bot.send_message(
       message.chat.id,
-      "👑 *SUPER ADMIN PANEL*\n\nNiche diye gaye options mein se select karein (Koi command type karne ki zarurat nahi hai):",
+      "👑 *SUPER ADMIN PANEL*\n\nNiche diye gaye options mein se select karein:",
       parse_mode="Markdown",
       reply_markup=markup,
   )
@@ -206,27 +197,11 @@ def super_admin_callbacks(call):
   if data == "sa_add_single":
     bot.answer_callback_query(call.id)
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("⚡ VOLTAGE LOADER", callback_data="sa_sldr_Voltage"),
-        types.InlineKeyboardButton("🔥 NICE X NEXA", callback_data="sa_sldr_NEXA"),
-    )
-    bot.edit_message_text(
-        "➕ *ADD SINGLE KEY*\n\nPehle loader select karein:",
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup,
-    )
-
-  elif data.startswith("sa_sldr_"):
-    loader_code = data.split("_")[2]
-    bot.answer_callback_query(call.id)
-    markup = types.InlineKeyboardMarkup(row_width=2)
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
-      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_sdur_{loader_code}_{d}"))
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_sdur_{d}"))
     bot.edit_message_text(
-        f"➕ *ADD SINGLE KEY*\n\nLoader: *{get_loader_display_name(loader_code)}*\nAb duration select karein:",
+        "➕ *ADD SINGLE KEY*\n\nDuration select karein:",
         call.message.chat.id,
         call.message.message_id,
         parse_mode="Markdown",
@@ -235,13 +210,12 @@ def super_admin_callbacks(call):
 
   elif data.startswith("sa_sdur_"):
     parts = data.split("_")
-    loader_code = parts[2]
-    duration = parts[3]
+    duration = f"{parts[2]} {parts[3]}"
     bot.answer_callback_query(call.id)
-    user_states[ADMIN_ID] = {"type": "waiting_single_key", "loader": loader_code, "duration": duration}
+    user_states[ADMIN_ID] = {"type": "waiting_single_key", "duration": duration}
     bot.send_message(
         call.message.chat.id,
-        f"➕ *ADD SINGLE KEY*\n\nLoader: *{get_loader_display_name(loader_code)}* | Duration: *{duration}*\n\n💬 Ab apni **License Key** yahan chat mein send karein:",
+        f"➕ *ADD SINGLE KEY*\n\nDuration: *{duration}*\n\n💬 Ab apni **License Key** yahan chat mein send karein:",
         parse_mode="Markdown",
     )
 
@@ -249,27 +223,11 @@ def super_admin_callbacks(call):
   elif data == "sa_add_bulk":
     bot.answer_callback_query(call.id)
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("⚡ VOLTAGE LOADER", callback_data="sa_bldr_Voltage"),
-        types.InlineKeyboardButton("🔥 NICE X NEXA", callback_data="sa_bldr_NEXA"),
-    )
-    bot.edit_message_text(
-        "📦 *ADD BULK KEYS*\n\nPehle loader select karein:",
-        call.message.chat.id,
-        call.message.message_id,
-        parse_mode="Markdown",
-        reply_markup=markup,
-    )
-
-  elif data.startswith("sa_bldr_"):
-    loader_code = data.split("_")[2]
-    bot.answer_callback_query(call.id)
-    markup = types.InlineKeyboardMarkup(row_width=2)
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
-      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_bdur_{loader_code}_{d}"))
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_bdur_{d}"))
     bot.edit_message_text(
-        f"📦 *ADD BULK KEYS*\n\nLoader: *{get_loader_display_name(loader_code)}*\nAb duration select karein:",
+        "📦 *ADD BULK KEYS*\n\nDuration select karein:",
         call.message.chat.id,
         call.message.message_id,
         parse_mode="Markdown",
@@ -278,13 +236,12 @@ def super_admin_callbacks(call):
 
   elif data.startswith("sa_bdur_"):
     parts = data.split("_")
-    loader_code = parts[2]
-    duration = parts[3]
+    duration = f"{parts[2]} {parts[3]}"
     bot.answer_callback_query(call.id)
-    user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "loader": loader_code, "duration": duration}
+    user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "duration": duration}
     bot.send_message(
         call.message.chat.id,
-        f"📦 *ADD BULK KEYS*\n\nLoader: *{get_loader_display_name(loader_code)}* | Duration: *{duration}*\n\n💬 Ab multiple keys **ek line mein ek key** karke yahan paste/send karein:",
+        f"📦 *ADD BULK KEYS*\n\nDuration: *{duration}*\n\n💬 Ab multiple keys **ek line mein ek key** karke yahan paste/send karein:",
         parse_mode="Markdown",
     )
 
@@ -294,7 +251,7 @@ def super_admin_callbacks(call):
     user_states[ADMIN_ID] = {"type": "waiting_del_id"}
     bot.send_message(
         call.message.chat.id,
-        "❌ *DELETE SINGLE KEY*\n\n💬 Jis key ko delete karna hai uska **Key ID** yahan send karein (ID dekhne ke liye 'SHOW ALL KEYS' use karein):",
+        "❌ *DELETE SINGLE KEY*\n\n💬 Jis key ko delete karna hai uska **Key ID** yahan send karein:",
         parse_mode="Markdown",
     )
 
@@ -342,7 +299,7 @@ def super_admin_callbacks(call):
     bot.answer_callback_query(call.id)
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, loader, duration, license_key, status, assigned_to FROM keys_table ORDER BY id DESC LIMIT 50")
+    cursor.execute("SELECT id, duration, license_key, status, assigned_to FROM keys_table ORDER BY id DESC LIMIT 50")
     keys = cursor.fetchall()
     conn.close()
 
@@ -352,10 +309,9 @@ def super_admin_callbacks(call):
 
     text = "📋 *ALL STORED KEYS (Last 50):*\n\n"
     markup = types.InlineKeyboardMarkup(row_width=2)
-    for kid, loader_code, duration, lkey, status, assigned_to in keys:
-      loader_disp = get_loader_display_name(loader_code)
+    for kid, duration, lkey, status, assigned_to in keys:
       status_icon = "🟢 Unused" if status == 'unused' else f"🔴 Used (User: {assigned_to})"
-      text += f"🆔 ID: `{kid}` | *{loader_disp}* ({duration})\n🔑 `{lkey}`\nStatus: {status_icon}\n\n"
+      text += f"🆔 ID: `{kid}` | *{duration}*\n🔑 `{lkey}`\nStatus: {status_icon}\n\n"
       markup.add(
           types.InlineKeyboardButton(f"🗑️ Delete ID {kid}", callback_data=f"sa_del_id_{kid}")
       )
@@ -387,7 +343,7 @@ def super_admin_callbacks(call):
       pass
 
 
-# --- ADMIN STATE INPUT HANDLER (NO COMMANDS NEEDED) ---
+# --- ADMIN STATE INPUT HANDLER ---
 @bot.message_handler(
     func=lambda message: message.from_user.id == ADMIN_ID
     and message.from_user.id in user_states
@@ -426,40 +382,32 @@ def handle_admin_state_input(message):
   cursor = conn.cursor()
 
   if action_type == "waiting_single_key":
-    loader_code = state["loader"]
     duration = state["duration"]
     license_key = text
-    loader_display = get_loader_display_name(loader_code)
 
     try:
       cursor.execute(
-          "INSERT INTO keys_table (loader, duration, license_key, status)"
-          " VALUES (?, ?, ?, 'unused')",
-          (loader_code, duration, license_key),
+          "INSERT INTO keys_table (duration, license_key, status) VALUES (?, ?, 'unused')",
+          (duration, license_key),
       )
       conn.commit()
       conn.close()
       del user_states[user_id]
       bot.reply_to(
           message,
-          f"✅ *SINGLE KEY ADDED SUCCESSFULLY!*\n\n• *LOADER:*"
-          f" {loader_display}\n• *DURATION:* {duration}\n• *KEY:*"
-          f" `{license_key}`",
+          f"✅ *SINGLE KEY ADDED SUCCESSFULLY!*\n\n• *DURATION:* {duration}\n• *KEY:* `{license_key}`",
           parse_mode="Markdown",
       )
     except sqlite3.IntegrityError:
       conn.close()
       bot.reply_to(
           message,
-          "❌ *DUPLICATE KEY ERROR!*\nYeh license key pehle se database mein"
-          " mojood hai. 100% exact duplicate key add nahi ho sakti!",
+          "❌ *DUPLICATE KEY ERROR!*\nYeh license key pehle se database mein mojood hai.",
           parse_mode="Markdown",
       )
 
   elif action_type == "waiting_bulk_keys":
-    loader_code = state["loader"]
     duration = state["duration"]
-    loader_display = get_loader_display_name(loader_code)
 
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     if not lines:
@@ -473,9 +421,8 @@ def handle_admin_state_input(message):
     for key in lines:
       try:
         cursor.execute(
-            "INSERT INTO keys_table (loader, duration, license_key, status)"
-            " VALUES (?, ?, ?, 'unused')",
-            (loader_code, duration, key),
+            "INSERT INTO keys_table (duration, license_key, status) VALUES (?, ?, 'unused')",
+            (duration, key),
         )
         added_count += 1
       except sqlite3.IntegrityError:
@@ -487,9 +434,7 @@ def handle_admin_state_input(message):
 
     bot.reply_to(
         message,
-        f"📦 *BULK KEYS ADDED REPORT*\n\n• *LOADER:* {loader_display}"
-        f" ({duration})\n• *Successfully Added:* `{added_count}`\n• *Exact"
-        f" Duplicates Skipped:* `{duplicate_count}`",
+        f"📦 *BULK KEYS ADDED REPORT*\n\n• *DURATION:* {duration}\n• *Successfully Added:* `{added_count}`\n• *Exact Duplicates Skipped:* `{duplicate_count}`",
         parse_mode="Markdown",
     )
 
@@ -509,7 +454,7 @@ def handle_admin_state_input(message):
       conn.close()
       bot.reply_to(
           message,
-          "❌ Sahi Key ID enter karein (Sirf number hona chahiye, jaise: `5`).",
+          "❌ Sahi Key ID enter karein (Sirf number hona chahiye).",
           parse_mode="Markdown",
       )
 
@@ -552,18 +497,37 @@ def handle_reply_menu(message):
     del user_states[user_id]
 
   if message.text == "🛒 PURCHASE KEY":
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton(
-            "⚡ VOLTAGE LOADER", callback_data="loader_Voltage"
-        ),
-        types.InlineKeyboardButton(
-            "🔥 NICE X NEXA", callback_data="loader_NEXA"
-        ),
-    )
+    conn = sqlite3.connect("bot_database.db", check_same_thread=False)
+    cursor = conn.cursor()
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    plans = [
+        ("⏱ 5 HOUR - ₹30", "5 Hour", 30),
+        ("⏱ 1 DAY - ₹99", "1 Day", 99),
+        ("⏱ 2 DAY - ₹149", "2 Day", 149),
+        ("⏱ 3 DAY - ₹199", "3 Day", 199),
+        ("⏱ 7 DAY - ₹399", "7 Day", 399),
+        ("⏱ 30 DAY - ₹799", "30 Day", 799),
+    ]
+
+    for title, duration, amount in plans:
+      cursor.execute(
+          "SELECT COUNT(*) FROM keys_table WHERE duration = ? AND status = 'unused'",
+          (duration,),
+      )
+      stock_count = cursor.fetchone()[0]
+      button_title = f"{title} | STOCK: {stock_count}"
+      markup.add(
+          types.InlineKeyboardButton(
+              button_title, callback_data=f"plan_{duration}_{amount}"
+          )
+      )
+
+    conn.close()
+
     bot.send_message(
         message.chat.id,
-        "📦 *SELECT LOADER*\n\nAPNA PASANDIDA LOADER SELECT KAREIN:",
+        "📋 *SELECT PLAN*\n\nAPNA PLAN SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -577,8 +541,7 @@ def handle_reply_menu(message):
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT id, loader, duration, license_key FROM keys_table WHERE status"
-        " = 'used' AND assigned_to = ?",
+        "SELECT id, duration, license_key FROM keys_table WHERE status = 'used' AND assigned_to = ?",
         (user_id,),
     )
     keys = cursor.fetchall()
@@ -594,12 +557,11 @@ def handle_reply_menu(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     text = "🔐 *YOUR PURCHASED KEYS:*\n\n"
-    for key_id, loader_code, duration, key in keys:
-      loader_display = get_loader_display_name(loader_code)
-      text += f"• *{loader_display}* ({duration})\n🔑 `{key}`\n\n"
+    for key_id, duration, key in keys:
+      text += f"• *Plan:* ({duration})\n🔑 `{key}`\n\n"
       markup.add(
           types.InlineKeyboardButton(
-              f"🔄 RESET KEY ({loader_display} - {duration})",
+              f"🔄 RESET KEY ({duration})",
               callback_data=f"reset_{key_id}",
           )
       )
@@ -617,8 +579,7 @@ def handle_reply_menu(message):
     conn = sqlite3.connect("bot_database.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO reseller_orders (user_id, utr, amount, created_at, status)"
-        " VALUES (?, '', ?, ?, 'pending')",
+        "INSERT INTO reseller_orders (user_id, utr, amount, created_at, status) VALUES (?, '', ?, ?, 'pending')",
         (user_id, amount, current_time),
     )
     order_id = cursor.lastrowid
@@ -635,10 +596,8 @@ def handle_reply_menu(message):
         f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
         f"• *UPI ID:* `{UPI_ID}`\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-        "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND"
-        " KAREIN.\n"
-        "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK"
-        " KAREIN."
+        "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND KAREIN.\n"
+        "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
     )
 
     sent_msg = bot.send_photo(
@@ -692,66 +651,20 @@ def handle_reply_menu(message):
     )
 
 
-# --- SELECT PLANS ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("loader_"))
-def select_plan(call):
-  loader_code = call.data.split("_")[1]
-  loader_display = get_loader_display_name(loader_code)
-
-  conn = sqlite3.connect("bot_database.db", check_same_thread=False)
-  cursor = conn.cursor()
-
-  markup = types.InlineKeyboardMarkup(row_width=2)
-  plans = [
-      ("⏱ 5 HOUR - ₹30", "5 Hour", 30),
-      ("⏱ 1 DAY - ₹99", "1 Day", 99),
-      ("⏱ 2 DAY - ₹149", "2 Day", 149),
-      ("⏱ 3 DAY - ₹199", "3 Day", 199),
-      ("⏱ 7 DAY - ₹399", "7 Day", 399),
-      ("⏱ 30 DAY - ₹799", "30 Day", 799),
-  ]
-
-  for title, duration, amount in plans:
-    cursor.execute(
-        "SELECT COUNT(*) FROM keys_table WHERE loader = ? AND duration = ? AND status = 'unused'",
-        (loader_code, duration),
-    )
-    stock_count = cursor.fetchone()[0]
-    button_title = f"{title} | STOCK: {stock_count}"
-    markup.add(
-        types.InlineKeyboardButton(
-            button_title, callback_data=f"plan_{loader_code}_{duration}_{amount}"
-        )
-    )
-
-  conn.close()
-
-  bot.edit_message_text(
-      f"📋 *{loader_display} PLANS*\n\nAPNA PLAN SELECT KAREIN:",
-      call.message.chat.id,
-      call.message.message_id,
-      parse_mode="Markdown",
-      reply_markup=markup,
-  )
-
-
 # --- HANDLE PLAN & QR ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
 def handle_plan(call):
   parts = call.data.split("_")
-  loader_code = parts[1]
-  duration = parts[2]
+  duration = f"{parts[1]} {parts[2]}"
   amount = int(parts[3])
-  loader_display = get_loader_display_name(loader_code)
   user_id = call.from_user.id
   current_time = time.time()
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
   cursor.execute(
-      "INSERT INTO orders (user_id, utr, loader, duration, amount, created_at,"
-      " status) VALUES (?, '', ?, ?, ?, ?, 'pending')",
-      (user_id, loader_code, duration, amount, current_time),
+      "INSERT INTO orders (user_id, utr, duration, amount, created_at, status) VALUES (?, '', ?, ?, ?, 'pending')",
+      (user_id, duration, amount, current_time),
   )
   order_id = cursor.lastrowid
   conn.commit()
@@ -763,15 +676,12 @@ def handle_plan(call):
 
   caption_text = (
       "💳 *SCAN & PAY*\n\n"
-      f"• *LOADER:* {loader_display}\n"
       f"• *PLAN:* {duration}\n"
       f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
       f"• *UPI ID:* `{UPI_ID}`\n\n"
       "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-      "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND"
-      " KAREIN.\n"
-      "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK"
-      " KAREIN."
+      "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND KAREIN.\n"
+      "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
   )
 
   sent_msg = bot.send_photo(
@@ -785,7 +695,6 @@ def handle_plan(call):
   user_states[user_id] = {
       "type": "plan",
       "order_id": order_id,
-      "loader": loader_code,
       "duration": duration,
       "amount": amount,
       "timestamp": current_time,
@@ -854,8 +763,7 @@ def handle_utr_text(message):
     else:
       bot.reply_to(
           message,
-          "❌ *INVALID UTR FORMAT!*\nAAPKA UTR SAHI FORMAT MEIN NAHI MILA."
-          " KRIPYA APNA **12-DIGIT NUMERIC UTR** DOBARA BHEJEIN:",
+          "❌ *INVALID UTR FORMAT!*\nKRIPYA APNA **12-DIGIT NUMERIC UTR** DOBARA BHEJEIN:",
           parse_mode="Markdown",
           reply_markup=get_payment_reply_keyboard(),
       )
@@ -877,20 +785,10 @@ def handle_utr_text(message):
   if used_in_orders or used_in_resellers:
     bot.reply_to(
         message,
-        "❌ *FRAUD ALERT!* YEH UTR NUMBER PEHLE HI USE KIYA JA CHUKA HAI. DUBARA"
-        " USE NAHI HO SAKTA!",
+        "❌ *FRAUD ALERT!* YEH UTR NUMBER PEHLE HI USE KIYA JA CHUKA HAI.",
         parse_mode="Markdown",
         reply_markup=get_payment_reply_keyboard(),
     )
-    try:
-      bot.send_message(
-          ADMIN_ID,
-          f"🚨 *FRAUD/DUPLICATE UTR ATTEMPT!*\n👤 USER ID: `{user_id}`\n💳 TRIED"
-          f" TO REUSE UTR: `{utr}`",
-          parse_mode="Markdown",
-      )
-    except Exception:
-      pass
     return
 
   order_id = state["order_id"]
@@ -909,8 +807,7 @@ def handle_utr_text(message):
 
   bot.reply_to(
       message,
-      "✅ *UTR VERIFIED & SAVED SUCCESSFULLY!*\nAB NICHE MENU MEIN DIYE GAYE"
-      " **✅ PAYMENT DONE** BUTTON PAR CLICK KAREIN.",
+      "✅ *UTR VERIFIED & SAVED SUCCESSFULLY!*\nAB NICHE MENU MEIN DIYE GAYE **✅ PAYMENT DONE** BUTTON PAR CLICK KAREIN.",
       parse_mode="Markdown",
       reply_markup=get_payment_reply_keyboard(),
   )
@@ -947,7 +844,7 @@ def handle_payment_done_button(message):
 
   if action_type == "plan":
     cursor.execute(
-        "SELECT utr, loader, duration, amount FROM orders WHERE id = ?",
+        "SELECT utr, duration, amount FROM orders WHERE id = ?",
         (order_id,),
     )
     row = cursor.fetchone()
@@ -961,15 +858,13 @@ def handle_payment_done_button(message):
     conn.close()
     bot.send_message(
         message.chat.id,
-        "❌ PEHLE APNA VALID 12-DIGIT UTR CHAT MEIN SEND KAREIN, FIR PAYMENT"
-        " DONE DABAYEIN!",
+        "❌ PEHLE APNA VALID 12-DIGIT UTR CHAT MEIN SEND KAREIN, FIR PAYMENT DONE DABAYEIN!",
         reply_markup=get_payment_reply_keyboard(),
     )
     return
 
   if action_type == "plan":
-    utr, loader_code, duration, amount = row
-    loader_display = get_loader_display_name(loader_code)
+    utr, duration, amount = row
 
     cursor.execute(
         "UPDATE orders SET status = 'pending_admin' WHERE id = ?", (order_id,)
@@ -981,8 +876,7 @@ def handle_payment_done_button(message):
 
     bot.send_message(
         message.chat.id,
-        "⏳ *PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS APPROVAL"
-        " KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
+        "⏳ *PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS APPROVAL KE LIYE BHEJ DIYA GAYA HAI.",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(user_id),
     )
@@ -1000,7 +894,7 @@ def handle_payment_done_button(message):
     admin_text = (
         f"🔔 *NEW PAYMENT APPROVAL REQUEST!*\n\n"
         f"👤 *USER ID:* `{user_id}`\n"
-        f"📦 *LOADER:* {loader_display} ({duration})\n"
+        f"⏱ *PLAN:* {duration}\n"
         f"💵 *AMOUNT:* ₹{amount}\n"
         f"💳 *UTR NUMBER:* `{utr}`"
     )
@@ -1024,8 +918,7 @@ def handle_payment_done_button(message):
 
     bot.send_message(
         message.chat.id,
-        "⏳ *RESELLER PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS"
-        " APPROVAL KE LIYE BHEJ DIYA GAYA HAI. KRIPYA WAIT KAREIN.",
+        "⏳ *RESELLER PAYMENT SUBMITTED SUCCESSFULLY!*\nAAPKA UTR ADMIN KE PAAS APPROVAL KE LIYE BHEJ DIYA GAYA HAI.",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(user_id),
     )
@@ -1068,8 +961,7 @@ def admin_approval_callback(call):
 
   if target_type == "plan":
     cursor.execute(
-        "SELECT user_id, utr, loader, duration, amount, status FROM orders WHERE"
-        " id = ?",
+        "SELECT user_id, utr, duration, amount, status FROM orders WHERE id = ?",
         (order_id,),
     )
     row = cursor.fetchone()
@@ -1078,8 +970,7 @@ def admin_approval_callback(call):
       bot.answer_callback_query(call.id, "ORDER NOT FOUND!")
       return
 
-    user_id, utr, loader_code, duration, amount, status = row
-    loader_display = get_loader_display_name(loader_code)
+    user_id, utr, duration, amount, status = row
 
     if status not in ["pending", "pending_admin"]:
       conn.close()
@@ -1090,9 +981,8 @@ def admin_approval_callback(call):
 
     if action == "app":
       cursor.execute(
-          "SELECT id, license_key FROM keys_table WHERE loader = ? AND duration = ? AND status"
-          " = 'unused' LIMIT 1",
-          (loader_code, duration),
+          "SELECT id, license_key FROM keys_table WHERE duration = ? AND status = 'unused' LIMIT 1",
+          (duration,),
       )
       key_row = cursor.fetchone()
 
@@ -1100,7 +990,7 @@ def admin_approval_callback(call):
         conn.close()
         bot.answer_callback_query(
             call.id,
-            "❌ OUT OF STOCK! ISS LOADER/DURATION KI KEYS KHATAM HO GAYI HAIN.",
+            "❌ OUT OF STOCK! ISS DURATION KI KEYS KHATAM HO GAYI HAIN.",
             show_alert=True,
         )
         return
@@ -1121,9 +1011,7 @@ def admin_approval_callback(call):
       bot.answer_callback_query(call.id, "ORDER APPROVED SUCCESSFULLY!")
       try:
         bot.edit_message_text(
-            f"✅ *APPROVED BY ADMIN*\n\n👤 USER: `{user_id}`\n📦 LOADER:"
-            f" {loader_display} ({duration})\n💳 UTR: `{utr}`\n🔑 KEY:"
-            f" `{license_key}`",
+            f"✅ *APPROVED BY ADMIN*\n\n👤 USER: `{user_id}`\n⏱ PLAN: {duration}\n💳 UTR: `{utr}`\n🔑 KEY: `{license_key}`",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown",
@@ -1134,9 +1022,7 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!*\n\n• *LOADER:*"
-            f" {loader_display} ({duration})\n• *YOUR LICENSE"
-            f" KEY:*\n`{license_key}`",
+            f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!*\n\n• *PLAN:* {duration}\n• *YOUR LICENSE KEY:*\n`{license_key}`",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(user_id),
         )
@@ -1164,8 +1050,7 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
-            " PAYMENT & SEND UTR.",
+            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE PAYMENT & SEND UTR.",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(user_id),
         )
@@ -1206,8 +1091,7 @@ def admin_approval_callback(call):
       bot.answer_callback_query(call.id, "RESELLER ORDER APPROVED!")
       try:
         bot.edit_message_text(
-            f"✅ *RESELLER APPROVED BY ADMIN*\n\n👤 USER:"
-            f" `{user_id}`\n💳 UTR: `{utr}`",
+            f"✅ *RESELLER APPROVED BY ADMIN*\n\n👤 USER: `{user_id}`\n💳 UTR: `{utr}`",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown",
@@ -1218,8 +1102,7 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "🎉 *RESELLER SHIP APPROVED!*\nYOUR RESELLER SHIP HAS BEEN ACTIVATED"
-            " FOR 1 MONTH!",
+            "🎉 *RESELLER SHIP APPROVED!*\nYOUR RESELLER SHIP HAS BEEN ACTIVATED FOR 1 MONTH!",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(user_id),
         )
@@ -1237,8 +1120,7 @@ def admin_approval_callback(call):
       bot.answer_callback_query(call.id, "RESELLER ORDER REJECTED.")
       try:
         bot.edit_message_text(
-            f"❌ *RESELLER REJECTED BY ADMIN*\n\n👤 USER:"
-            f" `{user_id}`\n💳 UTR: `{utr}`",
+            f"❌ *RESELLER REJECTED BY ADMIN*\n\n👤 USER: `{user_id}`\n💳 UTR: `{utr}`",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown",
@@ -1249,8 +1131,7 @@ def admin_approval_callback(call):
       try:
         bot.send_message(
             user_id,
-            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.\n💳 PLEASE COMPLETE"
-            " PAYMENT & SEND UTR.",
+            "❌ PAYMENT NOT RECEIVED — APPROVAL REJECTED.",
             parse_mode="Markdown",
             reply_markup=get_main_reply_keyboard(user_id),
         )
@@ -1314,10 +1195,32 @@ def handle_reset_key(call):
   )
   bot.send_message(
       ADMIN_ID,
-      f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID:"
-      f" `{key_id}`",
+      f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID: `{key_id}`",
       parse_mode="Markdown",
   )
+
+
+# --- CATCH-ALL: FORWARD ANY USER MESSAGE TO ADMIN ---
+@bot.message_handler(
+    func=lambda message: message.from_user.id != ADMIN_ID,
+    content_types=["text", "photo", "document", "video", "audio", "voice"],
+)
+def forward_user_messages_to_admin(message):
+  try:
+    user = message.from_user
+    username = f"@{user.username}" if user.username else "No Username"
+    first_name = user.first_name if user.first_name else "User"
+
+    info_text = (
+        f"📩 *NEW MESSAGE FROM USER*\n"
+        f"👤 Name: {first_name}\n"
+        f"🆔 User ID: `{user.id}`\n"
+        f"🔗 Username: {username}"
+    )
+    bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
+    bot.forward_message(ADMIN_ID, message.chat.id, message.id)
+  except Exception as e:
+    print(f"Error forwarding message to admin: {e}")
 
 
 # --- FLASK SERVER & BOT RUNNER ---
