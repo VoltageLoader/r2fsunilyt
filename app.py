@@ -95,7 +95,7 @@ def get_main_reply_keyboard(user_id=None):
   )
   markup.add(types.KeyboardButton("🤝 BUY RESELLERSHIP"))
   markup.add(
-      types.KeyboardButton("♻️ SETUP CHANNEL"),
+      types.KeyboardButton("♻️️ SETUP CHANNEL"),
       types.KeyboardButton("💬 CONTACT SUPPORT"),
   )
   if user_id == ADMIN_ID:
@@ -200,7 +200,8 @@ def super_admin_callbacks(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
-      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_sdur_{d}"))
+      cb_val = d.replace(" ", "_")
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_sdur_{cb_val}"))
     bot.edit_message_text(
         "➕ *ADD SINGLE KEY*\n\nDuration select karein:",
         call.message.chat.id,
@@ -210,8 +211,7 @@ def super_admin_callbacks(call):
     )
 
   elif data.startswith("sa_sdur_"):
-    parts = data.split("_")
-    duration = f"{parts[2]} {parts[3]}"
+    duration = data.replace("sa_sdur_", "").replace("_", " ")
     bot.answer_callback_query(call.id)
     user_states[ADMIN_ID] = {"type": "waiting_single_key", "duration": duration}
     bot.send_message(
@@ -226,7 +226,8 @@ def super_admin_callbacks(call):
     markup = types.InlineKeyboardMarkup(row_width=2)
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
-      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_bdur_{d}"))
+      cb_val = d.replace(" ", "_")
+      markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"sa_bdur_{cb_val}"))
     bot.edit_message_text(
         "📦 *ADD BULK KEYS*\n\nDuration select karein:",
         call.message.chat.id,
@@ -236,8 +237,7 @@ def super_admin_callbacks(call):
     )
 
   elif data.startswith("sa_bdur_"):
-    parts = data.split("_")
-    duration = f"{parts[2]} {parts[3]}"
+    duration = data.replace("sa_bdur_", "").replace("_", " ")
     bot.answer_callback_query(call.id)
     user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "duration": duration}
     bot.send_message(
@@ -277,7 +277,7 @@ def super_admin_callbacks(call):
     user_states[ADMIN_ID] = {"type": "waiting_bulk_del"}
     bot.send_message(
         call.message.chat.id,
-        "🗑️ *DELETE BULK KEYS BY LIST*\n\n💬 Jin keys ko delete karna hai unhe **ek line mein ek key** karke yahan send karein:",
+        "🗑 *DELETE BULK KEYS BY LIST*\n\n💬 Jin keys ko delete karna hai unhe **ek line mein ek key** karke yahan send karein:",
         parse_mode="Markdown",
     )
 
@@ -518,9 +518,10 @@ def handle_reply_menu(message):
       )
       stock_count = cursor.fetchone()[0]
       button_title = f"{title} | STOCK: {stock_count}"
+      cb_duration = duration.replace(" ", "_")
       markup.add(
           types.InlineKeyboardButton(
-              button_title, callback_data=f"plan_{duration}_{amount}"
+              button_title, callback_data=f"plan_{cb_duration}_{amount}"
           )
       )
 
@@ -597,8 +598,9 @@ def handle_reply_menu(message):
         f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
         f"• *UPI ID:* `{UPI_ID}`\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-        "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND KAREIN.\n"
-        "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
+        "1️⃣ PEHLE PAYMENT KAREIN.\n"
+        "2️⃣ **12-DIGIT UTR** AUR **PAYMENT SCREENSHOT** DONO YAHIN CHAT MEIN SEND KAREIN.\n"
+        "3️⃣ SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
     )
 
     sent_msg = bot.send_photo(
@@ -655,9 +657,10 @@ def handle_reply_menu(message):
 # --- HANDLE PLAN & QR ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
 def handle_plan(call):
+  bot.answer_callback_query(call.id)
   parts = call.data.split("_")
-  duration = f"{parts[1]} {parts[2]}"
-  amount = int(parts[3])
+  amount = int(parts[-1])
+  duration = "_".join(parts[1:-1]).replace("_", " ")
   user_id = call.from_user.id
   current_time = time.time()
 
@@ -681,8 +684,9 @@ def handle_plan(call):
       f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
       f"• *UPI ID:* `{UPI_ID}`\n\n"
       "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
-      "1️⃣ PEHLE PAYMENT KAREIN AUR **12-DIGIT UTR** YAHIN CHAT MEIN SEND KAREIN.\n"
-      "2️⃣ UTR SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
+      "1️⃣ PEHLE PAYMENT KAREIN.\n"
+      "2️⃣ **12-DIGIT UTR** AUR **PAYMENT SCREENSHOT** DONO YAHIN CHAT MEIN SEND KAREIN.\n"
+      "3️⃣ SEND KARNE KE BAAD NICHE MENU MEIN **✅ PAYMENT DONE** PAR CLICK KAREIN."
   )
 
   sent_msg = bot.send_photo(
@@ -709,66 +713,82 @@ def handle_plan(call):
   ).start()
 
 
-# --- HANDLE UTR TEXT INPUT ---
+# --- HANDLE UTR TEXT & SCREENSHOT INPUT ---
 @bot.message_handler(
     func=lambda message: message.from_user.id in user_states
-    and user_states[message.from_user.id]["type"] in ["plan", "reseller"]
+    and user_states[message.from_user.id]["type"] in ["plan", "reseller"],
+    content_types=["text", "photo"],
 )
 def handle_utr_text(message):
   user_id = message.from_user.id
-  text = message.text or ""
-
-  if "PAYMENT DONE" in text.upper():
-    handle_payment_done_button(message)
-    return
-  elif "ORDER CANCEL" in text.upper():
-    handle_cancel_button(message)
-    return
-
-  if any(
-      menu_item in text.upper()
-      for menu_item in [
-          "🛒 PURCHASE KEY",
-          "🔐 MY KEYS",
-          "🤝 BUY RESELLERSHIP",
-          "♻️ SETUP CHANNEL",
-          "💬 CONTACT SUPPORT",
-          "🔚 BACK",
-          "👑 SUPER ADMIN",
-      ]
-  ) or text.startswith("/"):
-    if user_id in user_states and "qr_msg_id" in user_states[user_id]:
-      try:
-        bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
-      except Exception:
-        pass
-    del user_states[user_id]
-    if "BACK" in text.upper():
-      handle_back_button(message)
-    elif "SUPER ADMIN" in text.upper():
-      super_admin_panel(message)
-    else:
-      handle_reply_menu(message)
-    return
-
   state = user_states[user_id]
-  raw_text = text.strip()
 
-  match = re.search(r"\b\d{12}\b", raw_text)
-  if match:
-    utr = match.group(0)
-  else:
-    cleaned = "".join(filter(str.isdigit, raw_text))
-    if len(cleaned) == 12:
-      utr = cleaned
+  # If user sends a photo (Screenshot)
+  if message.photo:
+    caption = message.caption or ""
+    match = re.search(r"\b\d{12}\b", caption)
+    if match:
+      utr = match.group(0)
     else:
       bot.reply_to(
           message,
-          "❌ *INVALID UTR FORMAT!*\nKRIPYA APNA **12-DIGIT NUMERIC UTR** DOBARA BHEJEIN:",
+          "📸 *Screenshot Mil Gaya!*\nAb apna **12-digit UTR number** bhi yahin chat mein text karke bhej dein:",
           parse_mode="Markdown",
           reply_markup=get_payment_reply_keyboard(),
       )
       return
+  else:
+    text = message.text or ""
+
+    if "PAYMENT DONE" in text.upper():
+      handle_payment_done_button(message)
+      return
+    elif "ORDER CANCEL" in text.upper():
+      handle_cancel_button(message)
+      return
+
+    if any(
+        menu_item in text.upper()
+        for menu_item in [
+            "🛒 PURCHASE KEY",
+            "🔐 MY KEYS",
+            "🤝 BUY RESELLERSHIP",
+            "♻️ SETUP CHANNEL",
+            "💬 CONTACT SUPPORT",
+            "🔚 BACK",
+            "👑 SUPER ADMIN",
+        ]
+    ) or text.startswith("/"):
+      if user_id in user_states and "qr_msg_id" in user_states[user_id]:
+        try:
+          bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
+        except Exception:
+          pass
+      del user_states[user_id]
+      if "BACK" in text.upper():
+        handle_back_button(message)
+      elif "SUPER ADMIN" in text.upper():
+        super_admin_panel(message)
+      else:
+        handle_reply_menu(message)
+      return
+
+    raw_text = text.strip()
+    match = re.search(r"\b\d{12}\b", raw_text)
+    if match:
+      utr = match.group(0)
+    else:
+      cleaned = "".join(filter(str.isdigit, raw_text))
+      if len(cleaned) == 12:
+        utr = cleaned
+      else:
+        bot.reply_to(
+            message,
+            "❌ *INVALID UTR FORMAT!*\nKRIPYA APNA **12-DIGIT NUMERIC UTR** DOBARA BHEJEIN:",
+            parse_mode="Markdown",
+            reply_markup=get_payment_reply_keyboard(),
+        )
+        return
 
   conn = sqlite3.connect("bot_database.db", check_same_thread=False)
   cursor = conn.cursor()
@@ -808,7 +828,7 @@ def handle_utr_text(message):
 
   bot.reply_to(
       message,
-      "✅ *UTR VERIFIED & SAVED SUCCESSFULLY!*\nAB NICHE MENU MEIN DIYE GAYE **✅ PAYMENT DONE** BUTTON PAR CLICK KAREIN.",
+      "✅ *UTR VERIFIED & SAVED SUCCESSFULLY!*\nAb niche menu mein diye gaye **✅ PAYMENT DONE** button par click karein.",
       parse_mode="Markdown",
       reply_markup=get_payment_reply_keyboard(),
   )
@@ -1239,7 +1259,6 @@ def handle_admin_reply(message):
   target_user_id = admin_reply_map.get(reply_msg.message_id)
 
   if not target_user_id:
-    # Fallback parsing via regex from info message
     text_content = reply_msg.text or reply_msg.caption or ""
     match = re.search(r"User ID:\s*`?(\d+)`?", text_content)
     if match:
@@ -1264,8 +1283,7 @@ def handle_admin_reply(message):
   else:
     bot.reply_to(
         message,
-        "❌ Target user ID nahi mila. Kripya user ke **Info Message** par reply"
-        " karein.",
+        "❌ Target user ID nahi mila. Kripya user ke **Info Message** par reply karein.",
         parse_mode="Markdown",
     )
 
