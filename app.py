@@ -138,35 +138,63 @@ def get_back_reply_keyboard():
 
 
 # ============================================================
-# START COMMAND (ADMIN ONLY)
+# SET BOT COMMANDS (MENU BUTTON SETUP)
 # ============================================================
 
-@bot.message_handler(commands=["start"])
-def send_welcome(message):
+def setup_bot_commands():
+    commands = [
+        types.BotCommand("start", "Open Admin Panel / Main Menu"),
+        types.BotCommand("generate", "Generate Key Shortcut"),
+        types.BotCommand("stock", "View Key Stock Shortcut"),
+        types.BotCommand("delete", "Delete Key Options"),
+        types.BotCommand("sold", "View Sold Keys")
+    ]
+    try:
+        bot.set_my_commands(commands)
+    except Exception as e:
+        print("Failed to set bot commands:", e)
+
+
+# ============================================================
+# START COMMAND & SHORTCUT COMMANDS (ADMIN ONLY)
+# ============================================================
+
+@bot.message_handler(commands=["start", "generate", "stock", "delete", "sold"])
+def handle_commands(message):
     user_id = message.from_user.id
 
     if user_id != ADMIN_ID:
         bot.reply_to(message, "❌ Yeh bot sirf Admin ke liye restricted hai!")
         return
 
+    cmd = message.text.split()[0].lower()
+
     if user_id in user_states:
         del user_states[user_id]
 
-    welcome_text = (
-        "👑 *WELCOME TO ADMIN KEY PANEL*\n\n"
-        "👉 *Neeche diye gaye menu buttons ka use karein:* 👇\n\n"
-        "🔑 *GENERATE KEY* - Apna key turant generate karein\n"
-        "📦 *ALL KEY STOCK* - Available keys ka stock dekhein\n"
-        "🗑️ *DELETE KEY* - Keys delete ya clear karein\n"
-        "📋 *SHOW SOLD KEY* - Use ho chuki keys dekhein"
-    )
-
-    bot.send_message(
-        message.chat.id,
-        welcome_text,
-        parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(),
-    )
+    if cmd == "/start":
+        welcome_text = (
+            "👑 *WELCOME TO ADMIN KEY PANEL*\n\n"
+            "👉 *Neeche diye gaye menu buttons ka use karein:* 👇\n\n"
+            "🔑 *GENERATE KEY* - Apna key turant generate karein\n"
+            "📦 *ALL KEY STOCK* - Available keys ka stock dekhein\n"
+            "🗑️ *DELETE KEY* - Keys delete ya clear karein\n"
+            "📋 *SHOW SOLD KEY* - Use ho chuki keys dekhein"
+        )
+        bot.send_message(
+            message.chat.id,
+            welcome_text,
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(),
+        )
+    elif cmd == "/generate":
+        handle_generate_key_menu_direct(message)
+    elif cmd == "/stock":
+        handle_all_key_stock_direct(message)
+    elif cmd == "/delete":
+        handle_delete_key_menu_direct(message)
+    elif cmd == "/sold":
+        handle_show_sold_key_direct(message)
 
 
 # ============================================================
@@ -208,6 +236,9 @@ def handle_back_button(message):
 
 @bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
 def handle_generate_key_menu(message):
+    handle_generate_key_menu_direct(message)
+
+def handle_generate_key_menu_direct(message):
     user_id = message.from_user.id
     if user_id != ADMIN_ID:
         return
@@ -292,6 +323,9 @@ def callback_generate_key(call):
 
 @bot.message_handler(func=lambda message: message.text == "📦 ALL KEY STOCK")
 def handle_all_key_stock(message):
+    handle_all_key_stock_direct(message)
+
+def handle_all_key_stock_direct(message):
     user_id = message.from_user.id
     if user_id != ADMIN_ID:
         return
@@ -325,6 +359,9 @@ def handle_all_key_stock(message):
 
 @bot.message_handler(func=lambda message: message.text == "🗑️ DELETE KEY")
 def handle_delete_key_menu(message):
+    handle_delete_key_menu_direct(message)
+
+def handle_delete_key_menu_direct(message):
     user_id = message.from_user.id
     if user_id != ADMIN_ID:
         return
@@ -397,7 +434,7 @@ def callback_delete_options(call):
         )
         bot.send_message(
             call.message.chat.id,
-            "⚠️️ *WARNING:* Kya aap database ka saara data delete karna chahte hain?",
+            "⚠ *WARNING:* Kya aap database ka saara data delete karna chahte hain?",
             parse_mode="Markdown",
             reply_markup=markup
         )
@@ -433,6 +470,9 @@ def callback_clear_all_confirm(call):
 
 @bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
 def handle_show_sold_key(message):
+    handle_show_sold_key_direct(message)
+
+def handle_show_sold_key_direct(message):
     user_id = message.from_user.id
     if user_id != ADMIN_ID:
         return
@@ -494,9 +534,8 @@ def callback_payment_handling(call):
 
     if action == "approve":
         utr = parts[1]
-        plan = "_".join(parts[2:])  # e.g., "1 Day", "7 Days", etc.
+        plan = "_".join(parts[2:])
 
-        # Database se plan ke mutabiq unused key uthayein
         key_row = keys_collection.find_one(
             {"duration": plan, "status": "unused"},
             {"id": 1, "license_key": 1}
@@ -617,9 +656,8 @@ def submit_free_task():
         return jsonify({"status": "error", "message": "❌ Device ID missing hai!"}), 400
 
     current_time = time.time()
-    cooldown_duration = 5 * 60 * 60  # 5 Hours in seconds
+    cooldown_duration = 5 * 60 * 60
 
-    # Check device cooldown in MongoDB
     cooldown_record = device_cooldowns_collection.find_one({"device_id": device_id})
     if cooldown_record:
         last_time = cooldown_record.get("last_claimed_time", 0)
@@ -632,7 +670,6 @@ def submit_free_task():
                 "message": f"❌ Aapko agli free key {hours} ghante {mins} minute baad milegi!"
             }), 400
 
-    # Stock se '5 Hour' duration ki unused key uthayein
     key_doc = keys_collection.find_one({"duration": "5 Hour", "status": "unused"}, {"id": 1, "license_key": 1})
     if not key_doc:
         return jsonify({"status": "error", "message": "❌ Free key stock filhaal khatam ho gaya hai!"}), 400
@@ -640,7 +677,6 @@ def submit_free_task():
     key_id = key_doc["id"]
     license_key = key_doc["license_key"]
 
-    # Key ko used mark karein
     assigned = keys_collection.find_one_and_update(
         {"id": key_id, "status": "unused"},
         {"$set": {"status": "used", "assigned_to": f"Device: {device_id}"}},
@@ -650,7 +686,6 @@ def submit_free_task():
     if not assigned:
         return jsonify({"status": "error", "message": "❌ Key pehle hi assign ho chuki hai, dubara try karein."}), 400
 
-    # Device ka cooldown time update/save karein
     device_cooldowns_collection.update_one(
         {"device_id": device_id},
         {"$set": {"last_claimed_time": current_time}},
@@ -671,14 +706,12 @@ def submit_payment():
     if not utr or not plan:
         return jsonify({"error": "Invalid data, UTR and Plan required"}), 400
 
-    # Database mein pending payment save karein
     payments_collection.update_one(
         {"utr": utr},
         {"$set": {"status": "pending", "plan": plan, "amount": amount, "key": ""}},
         upsert=True
     )
 
-    # Admin ko Telegram par notification with Inline Buttons bhejein
     msg = (
         f"🚨 *NEW PAYMENT RECEIVED!*\n\n"
         f"📦 *Plan:* {plan}\n"
@@ -724,6 +757,8 @@ def run_flask():
 # ============================================================
 
 if __name__ == "__main__":
+    setup_bot_commands()
+
     threading.Thread(
         target=run_flask,
         daemon=True
