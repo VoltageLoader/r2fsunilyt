@@ -1,2 +1,4 @@
-pytelegrambotapi
-flask
+pyTelegramBotAPI
+Flask
+pymongo
+dnspython
