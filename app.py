@@ -187,7 +187,7 @@ def get_main_reply_keyboard(user_id=None):
     )
 
     markup.add(
-        types.KeyboardButton("♻️️ SETUP CHANNEL"),
+        types.KeyboardButton("♻️ SETUP CHANNEL"),
         types.KeyboardButton("💬 CONTACT SUPPORT")
     )
 
@@ -1163,7 +1163,7 @@ def handle_reply_menu(message):
 
         bot.send_message(
             message.chat.id,
-            "♻️ *CLICK THE BUTTON BELOW TO OPEN SETUP CHANNEL:*",
+            "♻️️ *CLICK THE BUTTON BELOW TO OPEN SETUP CHANNEL:*",
             parse_mode="Markdown",
             reply_markup=markup,
         )
