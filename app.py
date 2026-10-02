@@ -186,6 +186,21 @@ def get_main_reply_keyboard(user_id=None):
         types.KeyboardButton("🤝 BUY RESELLERSHIP")
     )
 
+    # Check if user is Admin or active Reseller to show Generate Key button
+    is_admin_or_reseller = False
+    if user_id:
+        if user_id == ADMIN_ID:
+            is_admin_or_reseller = True
+        else:
+            reseller_check = resellers_collection.find_one({"user_id": user_id})
+            if reseller_check and reseller_check.get("expires_at", 0) > time.time():
+                is_admin_or_reseller = True
+
+    if is_admin_or_reseller:
+        markup.add(
+            types.KeyboardButton("🔑 GENERATE KEY")
+        )
+
     markup.add(
         types.KeyboardButton("♻️ SETUP CHANNEL"),
         types.KeyboardButton("💬 CONTACT SUPPORT")
@@ -239,12 +254,7 @@ def send_welcome(message):
 
     welcome_text = (
         "👋 *WELCOME TO R2F OFFICIAL KEY STORE!*\n\n"
-        "👉 *CLICK THE MENU BUTTONS BELOW:* 👇\n\n"
-        "🛒 *PURCHASE KEY*\n"
-        "🔐 *MY KEYS*\n"
-        "🤝 *BUY RESELLERSHIP*\n"
-        "♻️ *SETUP CHANNEL*\n"
-        "💬 *CONTACT SUPPORT*"
+        "👉 *CLICK THE MENU BUTTONS BELOW:* 👇"
     )
 
     bot.send_message(
@@ -285,6 +295,107 @@ def handle_back_button(message):
 
 
 # ============================================================
+# GENERATE KEY MENU HANDLER (FOR ADMIN & RESELLERS)
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
+def handle_gen_key_menu(message):
+    user_id = message.from_user.id
+
+    # Verify authorization
+    if user_id != ADMIN_ID:
+        reseller_check = resellers_collection.find_one({"user_id": user_id})
+        if not reseller_check or reseller_check.get("expires_at", 0) <= time.time():
+            bot.reply_to(
+                message,
+                "❌ *Aapke paas is feature ka access nahi hai ya aapki resellership expire ho chuki hai!*\n"
+                "Pehle Resellership buy karein.",
+                parse_mode="Markdown"
+            )
+            return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    durations = [
+        "5 Hour",
+        "1 Day",
+        "2 Day",
+        "3 Day",
+        "7 Day",
+        "30 Day"
+    ]
+
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(
+            types.InlineKeyboardButton(
+                f"⏱ {d}",
+                callback_data=f"genkey_{cb_val}"
+            )
+        )
+
+    bot.send_message(
+        message.chat.id,
+        "🔑 *GENERATE KEY*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("genkey_"))
+def handle_genkey_callback(call):
+    user_id = call.from_user.id
+
+    # Verify authorization
+    if user_id != ADMIN_ID:
+        reseller_check = resellers_collection.find_one({"user_id": user_id})
+        if not reseller_check or reseller_check.get("expires_at", 0) <= time.time():
+            bot.answer_callback_query(call.id, "❌ Unauthorized or Expired!", show_alert=True)
+            return
+
+    duration = call.data.replace("genkey_", "").replace("_", " ")
+
+    bot.answer_callback_query(call.id)
+
+    # Atomic key fetch from unused pool
+    key_row = keys_collection.find_one_and_update(
+        {
+            "duration": duration,
+            "status": "unused"
+        },
+        {
+            "$set": {
+                "status": "used",
+                "assigned_to": user_id
+            }
+        },
+        return_document=True
+    )
+
+    if not key_row:
+        bot.send_message(
+            call.message.chat.id,
+            f"❌ *Out of Stock!*\n"
+            f"Duration *{duration}* ke liye koi unused key available nahi hai.",
+            parse_mode="Markdown"
+        )
+        return
+
+    kid = key_row["id"]
+    license_key = key_row["license_key"]
+
+    bot.send_message(
+        call.message.chat.id,
+        f"✅ *KEY GENERATED SUCCESSFULLY!*\n\n"
+        f"• *ID:* `{kid}`\n"
+        f"• *Duration:* {duration}\n"
+        f"• *Key:* `{license_key}`",
+        parse_mode="Markdown",
+    )
+
+
+# ============================================================
 # SUPER ADMIN PANEL
 # ============================================================
 
@@ -320,6 +431,10 @@ def super_admin_panel(message):
         types.InlineKeyboardButton(
             "📋 SHOW ALL KEYS",
             callback_data="sa_show_keys"
+        ),
+        types.InlineKeyboardButton(
+            "👥 MANAGE RESELLERS",
+            callback_data="sa_manage_resellers"
         ),
     )
 
@@ -410,7 +525,7 @@ def super_admin_callbacks(call):
         bot.send_message(
             call.message.chat.id,
             f"➕ *ADD SINGLE KEY*\n\n"
-            f"Duration: *{duration}*\n\n"
+            f"Duration: *{duration}*:\n\n"
             "💬 Ab apni **License Key** yahan chat mein send karein:",
             parse_mode="Markdown",
         )
@@ -632,6 +747,118 @@ def super_admin_callbacks(call):
         )
 
     # --------------------------------------------------------
+    # MANAGE RESELLERS LIST
+    # --------------------------------------------------------
+
+    elif data == "sa_manage_resellers":
+
+        bot.answer_callback_query(call.id)
+
+        resellers = list(resellers_collection.find({}))
+
+        if not resellers:
+            bot.send_message(
+                call.message.chat.id,
+                "❌ Database mein koi active reseller available nahi hai.",
+                parse_mode="Markdown"
+            )
+            return
+
+        text = "👥 *ALL REGISTERED RESELLERS:*\n\n"
+        markup = types.InlineKeyboardMarkup(row_width=2)
+
+        for r in resellers:
+            r_id = r["user_id"]
+            exp = r.get("expires_at", 0)
+            current_t = time.time()
+
+            if exp > current_t:
+                days_left = int((exp - current_t) / 86400)
+                status_str = f"🟢 Active ({days_left} days left)"
+            else:
+                status_str = "🔴 Expired"
+
+            text += f"👤 User ID: `{r_id}`\nStatus: {status_str}\n\n"
+
+            markup.add(
+                types.InlineKeyboardButton(
+                    f"⏱ Extend 30D ({r_id})",
+                    callback_data=f"sa_res_ext_{r_id}"
+                ),
+                types.InlineKeyboardButton(
+                    f"❌ Delete/Block ({r_id})",
+                    callback_data=f"sa_res_del_{r_id}"
+                )
+            )
+
+        bot.send_message(
+            call.message.chat.id,
+            text,
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+
+    # --------------------------------------------------------
+    # EXTEND RESELLER TIME
+    # --------------------------------------------------------
+
+    elif data.startswith("sa_res_ext_"):
+
+        r_id = int(data.split("_")[3])
+        r_doc = resellers_collection.find_one({"user_id": r_id})
+
+        current_exp = r_doc.get("expires_at", time.time()) if r_doc else time.time()
+        base_time = max(current_exp, time.time())
+        new_exp = base_time + (30 * 24 * 60 * 60) # +30 days
+
+        resellers_collection.update_one(
+            {"user_id": r_id},
+            {"$set": {"expires_at": new_exp}},
+            upsert=True
+        )
+
+        bot.answer_callback_query(
+            call.id,
+            f"✅ Reseller {r_id} ki validity 30 din aur badha di gayi hai!",
+            show_alert=True
+        )
+
+        try:
+            bot.edit_message_text(
+                f"✅ *Reseller User ID `{r_id}` validity extended by 30 Days!*",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    # --------------------------------------------------------
+    # DELETE / BLOCK RESELLER
+    # --------------------------------------------------------
+
+    elif data.startswith("sa_res_del_"):
+
+        r_id = int(data.split("_")[3])
+        resellers_collection.delete_one({"user_id": r_id})
+
+        bot.answer_callback_query(
+            call.id,
+            f"✅ Reseller {r_id} ko delete/block kar diya gaya hai!",
+            show_alert=True
+        )
+
+        try:
+            bot.edit_message_text(
+                f"❌ *Reseller User ID `{r_id}` Deleted / Blocked Successfully!*",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    # --------------------------------------------------------
     # DELETE KEY BY ID
     # --------------------------------------------------------
 
@@ -705,7 +932,8 @@ def handle_admin_state_input(message):
         "🛒 PURCHASE KEY",
         "🔐 MY KEYS",
         "🤝 BUY RESELLERSHIP",
-        "♻️ SETUP CHANNEL",
+        "🔑 GENERATE KEY",
+        "♻️️ SETUP CHANNEL",
         "💬 CONTACT SUPPORT",
         "🔚 BACK",
         "👑 SUPER ADMIN",
@@ -715,6 +943,9 @@ def handle_admin_state_input(message):
 
         if text == "👑 SUPER ADMIN":
             super_admin_panel(message)
+
+        elif text == "🔑 GENERATE KEY":
+            handle_gen_key_menu(message)
 
         elif text == "🔚 BACK":
             handle_back_button(message)
@@ -1032,36 +1263,32 @@ def handle_reply_menu(message):
 
             return
 
-        markup = types.InlineKeyboardMarkup(
-            row_width=1
-        )
-
-        text = "🔐 *YOUR PURCHASED KEYS:*\n\n"
-
         for key in keys:
 
             key_id = key["id"]
             duration = key["duration"]
             license_key = key["license_key"]
 
-            text += (
-                f"• *Plan:* ({duration})\n"
-                f"🔑 `{license_key}`\n\n"
-            )
-
+            markup = types.InlineKeyboardMarkup(row_width=2)
             markup.add(
                 types.InlineKeyboardButton(
-                    f"🔄 RESET KEY ({duration})",
+                    f"🔄 RESET",
                     callback_data=f"reset_{key_id}",
+                ),
+                types.InlineKeyboardButton(
+                    f"🗑 DELETE",
+                    callback_data=f"delmykey_{key_id}",
                 )
             )
 
-        bot.send_message(
-            message.chat.id,
-            text,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
+            bot.send_message(
+                message.chat.id,
+                f"• *Plan:* ({duration})\n🔑 `{license_key}`",
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+
+        return
 
     # --------------------------------------------------------
     # RESELLERSHIP
@@ -1150,7 +1377,7 @@ def handle_reply_menu(message):
     # SETUP CHANNEL
     # --------------------------------------------------------
 
-    elif message.text == "♻️ SETUP CHANNEL":
+    elif message.text == "♻ SETUP CHANNEL":
 
         markup = types.InlineKeyboardMarkup()
 
@@ -1163,7 +1390,7 @@ def handle_reply_menu(message):
 
         bot.send_message(
             message.chat.id,
-            "♻️️ *CLICK THE BUTTON BELOW TO OPEN SETUP CHANNEL:*",
+            "♻ *CLICK THE BUTTON BELOW TO OPEN SETUP CHANNEL:*",
             parse_mode="Markdown",
             reply_markup=markup,
         )
@@ -1189,6 +1416,39 @@ def handle_reply_menu(message):
             parse_mode="Markdown",
             reply_markup=markup,
         )
+
+
+# ============================================================
+# HANDLE USER DELETE KEY FROM "MY KEYS"
+# ============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("delmykey_"))
+def handle_delete_my_key(call):
+    user_id = call.from_user.id
+    try:
+        key_id = int(call.data.split("_")[1])
+    except Exception:
+        bot.answer_callback_query(call.id, "❌ Invalid Key ID!", show_alert=True)
+        return
+
+    result = keys_collection.delete_one({
+        "id": key_id,
+        "assigned_to": user_id
+    })
+
+    if result.deleted_count > 0:
+        bot.answer_callback_query(call.id, "✅ Key successfully delete kar di gayi hai!", show_alert=True)
+        try:
+            bot.edit_message_text(
+                "❌ *Key successfully delete kar di gayi hai!*",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+    else:
+        bot.answer_callback_query(call.id, "❌ Yeh key aapko assigned nahi hai ya pehle hi delete ho chuki hai!", show_alert=True)
 
 
 # ============================================================
@@ -1310,10 +1570,6 @@ def handle_utr_text(message):
 
     state = user_states[user_id]
 
-    # --------------------------------------------------------
-    # PHOTO
-    # --------------------------------------------------------
-
     if message.photo:
 
         caption = message.caption or ""
@@ -1340,10 +1596,6 @@ def handle_utr_text(message):
 
             return
 
-    # --------------------------------------------------------
-    # TEXT
-    # --------------------------------------------------------
-
     else:
 
         text = message.text or ""
@@ -1364,6 +1616,7 @@ def handle_utr_text(message):
                 "🛒 PURCHASE KEY",
                 "🔐 MY KEYS",
                 "🤝 BUY RESELLERSHIP",
+                "🔑 GENERATE KEY",
                 "♻️ SETUP CHANNEL",
                 "💬 CONTACT SUPPORT",
                 "🔚 BACK",
@@ -1393,6 +1646,10 @@ def handle_utr_text(message):
             elif "SUPER ADMIN" in text.upper():
 
                 super_admin_panel(message)
+
+            elif "GENERATE KEY" in text.upper():
+
+                handle_gen_key_menu(message)
 
             else:
 
@@ -1436,10 +1693,6 @@ def handle_utr_text(message):
 
                 return
 
-    # ========================================================
-    # CHECK DUPLICATE UTR
-    # ========================================================
-
     used_in_orders = orders_collection.find_one(
         {
             "utr": utr,
@@ -1467,10 +1720,6 @@ def handle_utr_text(message):
         )
 
         return
-
-    # ========================================================
-    # SAVE UTR
-    # ========================================================
 
     order_id = state["order_id"]
 
@@ -1539,10 +1788,6 @@ def handle_payment_done_button(message):
 
     action_type = state["type"]
 
-    # --------------------------------------------------------
-    # GET ORDER
-    # --------------------------------------------------------
-
     if action_type == "plan":
 
         row = orders_collection.find_one(
@@ -1577,10 +1822,6 @@ def handle_payment_done_button(message):
         )
 
         return
-
-    # --------------------------------------------------------
-    # PLAN
-    # --------------------------------------------------------
 
     if action_type == "plan":
 
@@ -1637,10 +1878,6 @@ def handle_payment_done_button(message):
 
         except Exception:
             pass
-
-    # --------------------------------------------------------
-    # RESELLER
-    # --------------------------------------------------------
 
     else:
 
@@ -1716,10 +1953,6 @@ def admin_approval_callback(call):
 
     order_id = int(parts[3])
 
-    # ========================================================
-    # PLAN
-    # ========================================================
-
     if target_type == "plan":
 
         row = orders_collection.find_one(
@@ -1758,10 +1991,6 @@ def admin_approval_callback(call):
 
             return
 
-        # ----------------------------------------------------
-        # APPROVE PLAN
-        # ----------------------------------------------------
-
         if action == "app":
 
             key_row = keys_collection.find_one(
@@ -1789,7 +2018,6 @@ def admin_approval_callback(call):
 
             license_key = key_row["license_key"]
 
-            # Atomic key assignment
             assigned_key = keys_collection.find_one_and_update(
                 {
                     "id": key_id,
@@ -1859,10 +2087,6 @@ def admin_approval_callback(call):
             except Exception:
                 pass
 
-        # ----------------------------------------------------
-        # REJECT PLAN
-        # ----------------------------------------------------
-
         else:
 
             orders_collection.update_one(
@@ -1906,10 +2130,6 @@ def admin_approval_callback(call):
             except Exception:
                 pass
 
-    # ========================================================
-    # RESELLER
-    # ========================================================
-
     else:
 
         row = reseller_orders_collection.find_one(
@@ -1946,10 +2166,6 @@ def admin_approval_callback(call):
 
             return
 
-        # ----------------------------------------------------
-        # APPROVE RESELLER
-        # ----------------------------------------------------
-
         if action == "app":
 
             reseller_orders_collection.update_one(
@@ -1961,11 +2177,15 @@ def admin_approval_callback(call):
                 }
             )
 
+            # Set 30 days expiry from now
+            expiry_time = time.time() + (30 * 24 * 60 * 60)
+
             resellers_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$set": {
-                        "user_id": user_id
+                        "user_id": user_id,
+                        "expires_at": expiry_time
                     }
                 },
                 upsert=True
@@ -2002,10 +2222,6 @@ def admin_approval_callback(call):
 
             except Exception:
                 pass
-
-        # ----------------------------------------------------
-        # REJECT RESELLER
-        # ----------------------------------------------------
 
         else:
 
