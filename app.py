@@ -102,7 +102,7 @@ user_states = {}
 
 
 # ============================================================
-# KEYBOARDS
+# KEYBOARDS (SUPER ADMIN CONTROL PANEL MENU)
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -113,7 +113,12 @@ def get_main_reply_keyboard():
 
     markup.add(
         types.KeyboardButton("🔑 GENERATE KEY"),
-        types.KeyboardButton("📦 ALL KEY STOCK")
+        types.KeyboardButton("📊 CHECK STOCK")
+    )
+
+    markup.add(
+        types.KeyboardButton("➕ ADD SINGLE"),
+        types.KeyboardButton("📦 ADD BULK")
     )
 
     markup.add(
@@ -143,9 +148,11 @@ def get_back_reply_keyboard():
 
 def setup_bot_commands():
     commands = [
-        types.BotCommand("start", "Open Admin Panel / Main Menu"),
+        types.BotCommand("start", "Open Super Admin Control Panel"),
         types.BotCommand("generate", "Generate Key Shortcut"),
-        types.BotCommand("stock", "View Key Stock Shortcut"),
+        types.BotCommand("stock", "Check Stock Shortcut"),
+        types.BotCommand("addsingle", "Add Single Key Shortcut"),
+        types.BotCommand("addbulk", "Add Bulk Keys Shortcut"),
         types.BotCommand("delete", "Delete Key Options"),
         types.BotCommand("sold", "View Sold Keys")
     ]
@@ -156,10 +163,10 @@ def setup_bot_commands():
 
 
 # ============================================================
-# START COMMAND & SHORTCUT COMMANDS (ADMIN ONLY)
+# START & SHORTCUT COMMANDS (ADMIN ONLY)
 # ============================================================
 
-@bot.message_handler(commands=["start", "generate", "stock", "delete", "sold"])
+@bot.message_handler(commands=["start", "generate", "stock", "addsingle", "addbulk", "delete", "sold"])
 def handle_commands(message):
     user_id = message.from_user.id
 
@@ -174,12 +181,8 @@ def handle_commands(message):
 
     if cmd == "/start":
         welcome_text = (
-            "👑 *WELCOME TO ADMIN KEY PANEL*\n\n"
-            "👉 *Neeche diye gaye menu buttons ka use karein:* 👇\n\n"
-            "🔑 *GENERATE KEY* - Apna key turant generate karein\n"
-            "📦 *ALL KEY STOCK* - Available keys ka stock dekhein\n"
-            "🗑️ *DELETE KEY* - Keys delete ya clear karein\n"
-            "📋 *SHOW SOLD KEY* - Use ho chuki keys dekhein"
+            "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+            "Niche diye gaye options select karein:"
         )
         bot.send_message(
             message.chat.id,
@@ -191,6 +194,10 @@ def handle_commands(message):
         handle_generate_key_menu_direct(message)
     elif cmd == "/stock":
         handle_all_key_stock_direct(message)
+    elif cmd == "/addsingle":
+        handle_add_single_menu_direct(message)
+    elif cmd == "/addbulk":
+        handle_add_bulk_menu_direct(message)
     elif cmd == "/delete":
         handle_delete_key_menu_direct(message)
     elif cmd == "/sold":
@@ -224,19 +231,45 @@ def handle_back_button(message):
 
     bot.send_message(
         message.chat.id,
-        "🏠 *ADMIN MAIN MENU:*",
+        "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+        "Niche diye gaye options select karein:",
         parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard(),
     )
 
 
 # ============================================================
-# 1. GENERATE KEY HANDLER
+# TEXT MESSAGE HANDLERS FOR BOTTOM MENU BUTTONS
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
-def handle_generate_key_menu(message):
+def handle_gen_key_msg(message):
     handle_generate_key_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📊 CHECK STOCK")
+def handle_check_stock_msg(message):
+    handle_all_key_stock_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "➕ ADD SINGLE")
+def handle_add_single_msg(message):
+    handle_add_single_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📦 ADD BULK")
+def handle_add_bulk_msg(message):
+    handle_add_bulk_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "🗑️ DELETE KEY")
+def handle_del_key_msg(message):
+    handle_delete_key_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
+def handle_sold_key_msg(message):
+    handle_show_sold_key_direct(message)
+
+
+# ============================================================
+# 1. GENERATE KEY HANDLER
+# ============================================================
 
 def handle_generate_key_menu_direct(message):
     user_id = message.from_user.id
@@ -263,7 +296,6 @@ def handle_generate_key_menu_direct(message):
         parse_mode="Markdown",
         reply_markup=get_back_reply_keyboard(),
     )
-
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
 
@@ -307,7 +339,6 @@ def callback_generate_key(call):
         return
 
     bot.answer_callback_query(call.id, "Key Generated Successfully!")
-
     bot.send_message(
         call.message.chat.id,
         f"✅ *KEY GENERATED SUCCESSFULLY!*\n\n"
@@ -318,12 +349,8 @@ def callback_generate_key(call):
 
 
 # ============================================================
-# 2. ALL KEY STOCK HANDLER
+# 2. CHECK STOCK HANDLER
 # ============================================================
-
-@bot.message_handler(func=lambda message: message.text == "📦 ALL KEY STOCK")
-def handle_all_key_stock(message):
-    handle_all_key_stock_direct(message)
 
 def handle_all_key_stock_direct(message):
     user_id = message.from_user.id
@@ -331,7 +358,7 @@ def handle_all_key_stock_direct(message):
         return
 
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
-    text = "📦 *AVAILABLE KEY STOCK SUMMARY:*\n\n"
+    text = "📊 *AVAILABLE KEY STOCK SUMMARY:*\n\n"
 
     for d in durations:
         unused_count = keys_collection.count_documents({"duration": d, "status": "unused"})
@@ -349,17 +376,114 @@ def handle_all_key_stock_direct(message):
         parse_mode="Markdown",
         reply_markup=get_back_reply_keyboard(),
     )
-
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
 
 # ============================================================
-# 3. DELETE KEY HANDLER & OPTIONS
+# 3. ADD SINGLE HANDLER
 # ============================================================
 
-@bot.message_handler(func=lambda message: message.text == "🗑️ DELETE KEY")
-def handle_delete_key_menu(message):
-    handle_delete_key_menu_direct(message)
+def handle_add_single_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(
+            types.InlineKeyboardButton(
+                f"➕ Add Single ({d})",
+                callback_data=f"add_single_dur_{cb_val}"
+            )
+        )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "➕ *ADD SINGLE KEY*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=get_back_reply_keyboard(),
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("add_single_dur_"))
+def callback_add_single_dur(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    duration = call.data.replace("add_single_dur_", "").replace("_", " ")
+    user_id = call.from_user.id
+    user_states[user_id] = {
+        "type": "waiting_add_single_key",
+        "duration": duration,
+        "response_msg_id": call.message.message_id
+    }
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"💬 Selected Duration: *{duration}*\n\nAb apni **License Key** yahan send karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# 4. ADD BULK HANDLER
+# ============================================================
+
+def handle_add_bulk_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(
+            types.InlineKeyboardButton(
+                f"📦 Add Bulk ({d})",
+                callback_data=f"add_bulk_dur_{cb_val}"
+            )
+        )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "📦 *ADD BULK KEYS*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=get_back_reply_keyboard(),
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("add_bulk_dur_"))
+def callback_add_bulk_dur(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    duration = call.data.replace("add_bulk_dur_", "").replace("_", " ")
+    user_id = call.from_user.id
+    user_states[user_id] = {
+        "type": "waiting_add_bulk_keys",
+        "duration": duration,
+        "response_msg_id": call.message.message_id
+    }
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"💬 Selected Duration: *{duration}*\n\nAb multiple keys **ek line mein ek key** karke yahan send/paste karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown"
+    )
+
+
+# ============================================================
+# 5. DELETE KEY HANDLER & OPTIONS
+# ============================================================
 
 def handle_delete_key_menu_direct(message):
     user_id = message.from_user.id
@@ -367,30 +491,19 @@ def handle_delete_key_menu_direct(message):
         return
 
     markup = types.InlineKeyboardMarkup(row_width=1)
-
     markup.add(
-        types.InlineKeyboardButton(
-            "🗑️ Delete Single Key",
-            callback_data="del_single_menu"
-        ),
-        types.InlineKeyboardButton(
-            "📦 Delete Bulk Keys",
-            callback_data="del_bulk_menu"
-        ),
-        types.InlineKeyboardButton(
-            "⚠️ Cleared All Data",
-            callback_data="del_clear_all"
-        ),
+        types.InlineKeyboardButton("🗑️ Delete Single Key", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("📦 Delete Bulk Keys", callback_data="del_bulk_menu"),
+        types.InlineKeyboardButton("⚠️ Clear All Stock", callback_data="del_clear_all"),
     )
 
     sent_msg = bot.send_message(
         message.chat.id,
-        "🗑️ *DELETE KEY OPTIONS*\n\n"
+        "🗑️ *DELETE STOCK OPTIONS*\n\n"
         "Niche diye gaye options mein se select karein:",
         parse_mode="Markdown",
         reply_markup=get_back_reply_keyboard(),
     )
-
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
     bot.edit_message_reply_markup(
         chat_id=message.chat.id,
@@ -409,7 +522,7 @@ def callback_delete_options(call):
 
     if data == "del_single_menu":
         bot.answer_callback_query(call.id)
-        user_states[user_id]["type"] = "waiting_del_single"
+        user_states[user_id] = {"type": "waiting_del_single"}
         bot.send_message(
             call.message.chat.id,
             "💬 Jis key ko delete karna hai uska **Key ID** ya **License Key** yahan send karein:",
@@ -418,7 +531,7 @@ def callback_delete_options(call):
 
     elif data == "del_bulk_menu":
         bot.answer_callback_query(call.id)
-        user_states[user_id]["type"] = "waiting_del_bulk"
+        user_states[user_id] = {"type": "waiting_del_bulk"}
         bot.send_message(
             call.message.chat.id,
             "💬 Jin keys ko delete karna hai unhe **ek line mein ek key** karke yahan paste/send karein:",
@@ -434,7 +547,7 @@ def callback_delete_options(call):
         )
         bot.send_message(
             call.message.chat.id,
-            "⚠ *WARNING:* Kya aap database ka saara data delete karna chahte hain?",
+            "⚠ *WARNING:* Kya aap database ka saara stock delete karna chahte hain?",
             parse_mode="Markdown",
             reply_markup=markup
         )
@@ -447,9 +560,9 @@ def callback_clear_all_confirm(call):
 
     if call.data == "confirm_clear_all":
         keys_collection.delete_many({})
-        bot.answer_callback_query(call.id, "All data cleared successfully!", show_alert=True)
+        bot.answer_callback_query(call.id, "All stock cleared successfully!", show_alert=True)
         bot.edit_message_text(
-            "✅ Database ki saari keys successfully clear kar di gayi hain!",
+            "✅ Database ka saara stock successfully clear kar diya gaya hai!",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown"
@@ -465,12 +578,8 @@ def callback_clear_all_confirm(call):
 
 
 # ============================================================
-# 4. SHOW SOLD KEY HANDLER
+# 6. SHOW SOLD KEY HANDLER
 # ============================================================
-
-@bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
-def handle_show_sold_key(message):
-    handle_show_sold_key_direct(message)
 
 def handle_show_sold_key_direct(message):
     user_id = message.from_user.id
@@ -514,12 +623,11 @@ def handle_show_sold_key_direct(message):
         parse_mode="Markdown",
         reply_markup=get_back_reply_keyboard(),
     )
-
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
 
 # ============================================================
-# 5. ADMIN APPROVAL / REJECTION CALLBACK FOR PAYMENTS
+# ADMIN APPROVAL / REJECTION CALLBACK FOR PAYMENTS
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("approve_") or call.data.startswith("reject_"))
@@ -583,7 +691,7 @@ def callback_payment_handling(call):
 
 
 # ============================================================
-# STATE INPUT HANDLER (FOR DELETING KEYS)
+# STATE INPUT HANDLER (FOR ADDING & DELETING KEYS)
 # ============================================================
 
 @bot.message_handler(
@@ -591,7 +699,7 @@ def callback_payment_handling(call):
         message.from_user.id == ADMIN_ID
         and message.from_user.id in user_states
         and user_states[message.from_user.id].get("type")
-        in ["waiting_del_single", "waiting_del_bulk"]
+        in ["waiting_add_single_key", "waiting_add_bulk_keys", "waiting_del_single", "waiting_del_bulk"]
 )
 def handle_user_state_input(message):
     user_id = message.from_user.id
@@ -599,10 +707,65 @@ def handle_user_state_input(message):
     action_type = state["type"]
     text = (message.text or "").strip()
 
-    if text in ["🔑 GENERATE KEY", "📦 ALL KEY STOCK", "🗑️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
+    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
         return
 
-    if action_type == "waiting_del_single":
+    if action_type == "waiting_add_single_key":
+        duration = state.get("duration")
+        del user_states[user_id]
+        if not text:
+            bot.reply_to(message, "❌ Key empty nahi ho sakti!")
+            return
+        try:
+            new_id = get_next_id("key_id")
+            keys_collection.insert_one({
+                "id": new_id,
+                "duration": duration,
+                "license_key": text,
+                "status": "unused",
+                "assigned_to": None
+            })
+            bot.reply_to(message, f"✅ Single Key successfully added!\n• Duration: {duration}\n• Key: `{text}`", parse_mode="Markdown")
+        except DuplicateKeyError:
+            bot.reply_to(message, "❌ Yeh license key pehle se database mein mojood hai!")
+        except Exception as e:
+            bot.reply_to(message, f"❌ Error: {e}")
+
+    elif action_type == "waiting_add_bulk_keys":
+        duration = state.get("duration")
+        del user_states[user_id]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        if not lines:
+            bot.reply_to(message, "❌ Koi keys nahi mili!")
+            return
+        added_count = 0
+        duplicate_count = 0
+        for line in lines:
+            try:
+                new_id = get_next_id("key_id")
+                keys_collection.insert_one({
+                    "id": new_id,
+                    "duration": duration,
+                    "license_key": line,
+                    "status": "unused",
+                    "assigned_to": None
+                })
+                added_count += 1
+            except DuplicateKeyError:
+                duplicate_count += 1
+            except Exception:
+                pass
+
+        bot.reply_to(
+            message,
+            f"📦 *BULK ADD REPORT*\n\n"
+            f"• *Duration:* {duration}\n"
+            f"• *Successfully Added:* `{added_count}`\n"
+            f"• *Duplicates (Skipped):* `{duplicate_count}`",
+            parse_mode="Markdown"
+        )
+
+    elif action_type == "waiting_del_single":
         del user_states[user_id]
         query = text
         try:
