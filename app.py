@@ -177,10 +177,23 @@ def get_main_reply_keyboard(user_id=None):
         row_width=2
     )
 
-    markup.add(
-        types.KeyboardButton("🛒 PURCHASE KEY"),
-        types.KeyboardButton("🔐 MY KEYS")
-    )
+    is_active_reseller = False
+    if user_id:
+        if user_id != ADMIN_ID:
+            reseller_check = resellers_collection.find_one({"user_id": user_id})
+            if reseller_check and reseller_check.get("expires_at", 0) > time.time():
+                is_active_reseller = True
+
+    # Active reseller hone par "🛒 PURCHASE KEY" option ko hide kar diya gaya hai
+    if user_id == ADMIN_ID or not is_active_reseller:
+        markup.add(
+            types.KeyboardButton("🛒 PURCHASE KEY"),
+            types.KeyboardButton("🔐 MY KEYS")
+        )
+    else:
+        markup.add(
+            types.KeyboardButton("🔐 MY KEYS")
+        )
 
     markup.add(
         types.KeyboardButton("🤝 BUY RESELLERSHIP")
@@ -799,7 +812,7 @@ def super_admin_callbacks(call):
         )
 
     # --------------------------------------------------------
-    # EXTEND RESELLER TIME
+    # EXTEND RESELLER TIME (CUMULATIVE LOGIC)
     # --------------------------------------------------------
 
     elif data.startswith("sa_res_ext_"):
@@ -809,7 +822,7 @@ def super_admin_callbacks(call):
 
         current_exp = r_doc.get("expires_at", time.time()) if r_doc else time.time()
         base_time = max(current_exp, time.time())
-        new_exp = base_time + (30 * 24 * 60 * 60) # +30 days
+        new_exp = base_time + (30 * 24 * 60 * 60) # +30 days added to remaining/current time
 
         resellers_collection.update_one(
             {"user_id": r_id},
@@ -933,7 +946,7 @@ def handle_admin_state_input(message):
         "🔐 MY KEYS",
         "🤝 BUY RESELLERSHIP",
         "🔑 GENERATE KEY",
-        "♻️️ SETUP CHANNEL",
+        "♻ SETUP CHANNEL",
         "💬 CONTACT SUPPORT",
         "🔚 BACK",
         "👑 SUPER ADMIN",
@@ -1177,6 +1190,16 @@ def handle_reply_menu(message):
     # --------------------------------------------------------
 
     if message.text == "🛒 PURCHASE KEY":
+
+        # Active resellers ke liye purchase key block kiya gaya hai
+        reseller_check = resellers_collection.find_one({"user_id": user_id})
+        if reseller_check and reseller_check.get("expires_at", 0) > time.time():
+            bot.send_message(
+                message.chat.id,
+                "❌ Aap ek active Reseller hain, isliye aap keys purchase nahi kar sakte!",
+                reply_markup=get_main_reply_keyboard(user_id)
+            )
+            return
 
         markup = types.InlineKeyboardMarkup(
             row_width=2
@@ -1474,6 +1497,16 @@ def handle_plan(call):
     )
 
     user_id = call.from_user.id
+
+    # Active reseller check
+    reseller_check = resellers_collection.find_one({"user_id": user_id})
+    if reseller_check and reseller_check.get("expires_at", 0) > time.time():
+        bot.send_message(
+            call.message.chat.id,
+            "❌ Aap ek active Reseller hain, isliye aap keys purchase nahi kar sakte!",
+            reply_markup=get_main_reply_keyboard(user_id)
+        )
+        return
 
     current_time = time.time()
 
@@ -2177,8 +2210,11 @@ def admin_approval_callback(call):
                 }
             )
 
-            # Set 30 days expiry from now
-            expiry_time = time.time() + (30 * 24 * 60 * 60)
+            # Resellership time extension logic (bache hue dino mein 30 din judna)
+            existing_reseller = resellers_collection.find_one({"user_id": user_id})
+            current_exp = existing_reseller.get("expires_at", 0) if existing_reseller else 0
+            base_time = max(current_exp, time.time())
+            expiry_time = base_time + (30 * 24 * 60 * 60)
 
             resellers_collection.update_one(
                 {"user_id": user_id},
@@ -2215,7 +2251,7 @@ def admin_approval_callback(call):
                 bot.send_message(
                     user_id,
                     "🎉 *RESELLER SHIP APPROVED!*\n"
-                    "YOUR RESELLER SHIP HAS BEEN ACTIVATED FOR 1 MONTH!",
+                    "YOUR RESELLER SHIP HAS BEEN EXTENDED/ACTIVATED FOR 30 DAYS!",
                     parse_mode="Markdown",
                     reply_markup=get_main_reply_keyboard(user_id),
                 )
