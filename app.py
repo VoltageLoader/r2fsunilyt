@@ -9,7 +9,12 @@ import telebot
 from telebot import types
 
 # --- CONFIGURATION ---
-TOKEN = "8052389503:AAH-1f66GdfbZfDlAr1SySre6SchGU18Bbw"
+# --- CONFIGURATION ---
+TOKEN = os.environ.get("BOT_TOKEN")
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is not set")
+
 ADMIN_ID = 6795305850
 UPI_ID = "8905094188@ybl"
 UPI_NAME = "NEXA CYBER"
