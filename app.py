@@ -52,8 +52,9 @@ def init_db():
 
 init_db()
 
-# User state tracking dictionary
+# User state tracking dictionary & Admin reply map
 user_states = {}
+admin_reply_map = {}
 
 
 # --- BACKGROUND WORKER: SEND TIMEOUT MESSAGE AFTER 5 MINS ---
@@ -1200,7 +1201,7 @@ def handle_reset_key(call):
   )
 
 
-# --- CATCH-ALL: FORWARD ANY USER MESSAGE TO ADMIN ---
+# --- CATCH-ALL: FORWARD USER MESSAGES TO ADMIN ---
 @bot.message_handler(
     func=lambda message: message.from_user.id != ADMIN_ID,
     content_types=["text", "photo", "document", "video", "audio", "voice"],
@@ -1217,10 +1218,56 @@ def forward_user_messages_to_admin(message):
         f"🆔 User ID: `{user.id}`\n"
         f"🔗 Username: {username}"
     )
-    bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
-    bot.forward_message(ADMIN_ID, message.chat.id, message.id)
+    sent_info = bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
+    sent_forward = bot.forward_message(ADMIN_ID, message.chat.id, message.id)
+
+    # Save mapping so admin can reply
+    admin_reply_map[sent_info.message_id] = user.id
+    admin_reply_map[sent_forward.message_id] = user.id
   except Exception as e:
     print(f"Error forwarding message to admin: {e}")
+
+
+# --- ADMIN REPLY TO USER HANDLER ---
+@bot.message_handler(
+    func=lambda message: message.from_user.id == ADMIN_ID
+    and message.reply_to_message is not None,
+    content_types=["text", "photo", "document", "video", "audio", "voice"],
+)
+def handle_admin_reply(message):
+  reply_msg = message.reply_to_message
+  target_user_id = admin_reply_map.get(reply_msg.message_id)
+
+  if not target_user_id:
+    # Fallback parsing via regex from info message
+    text_content = reply_msg.text or reply_msg.caption or ""
+    match = re.search(r"User ID:\s*`?(\d+)`?", text_content)
+    if match:
+      target_user_id = int(match.group(1))
+    elif reply_msg.forward_from:
+      target_user_id = reply_msg.forward_from.id
+
+  if target_user_id:
+    try:
+      bot.copy_message(
+          chat_id=target_user_id,
+          from_chat_id=message.chat.id,
+          message_id=message.id,
+      )
+      bot.reply_to(
+          message,
+          "✅ *Reply successfully sent to user!*",
+          parse_mode="Markdown",
+      )
+    except Exception as e:
+      bot.reply_to(message, f"❌ Failed to send reply: `{e}`", parse_mode="Markdown")
+  else:
+    bot.reply_to(
+        message,
+        "❌ Target user ID nahi mila. Kripya user ke **Info Message** par reply"
+        " karein.",
+        parse_mode="Markdown",
+    )
 
 
 # --- FLASK SERVER & BOT RUNNER ---
