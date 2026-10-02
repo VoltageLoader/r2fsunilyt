@@ -131,7 +131,7 @@ def answer_callback_query(callback_query_id, text):
 # --- Telegram Bot Long Polling Thread (Admin Menu & Advanced Controls) ---
 def telegram_polling():
     offset = 0
-    print("🤖 Telegram Bot Polling Started with Super Admin Panel...")
+    print("🤖 Telegram Bot Polling Started with Super Admin Panel & Key Generation...")
     while True:
         try:
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
@@ -177,7 +177,10 @@ def telegram_polling():
                             menu_text = "👑 *SUPER ADMIN CONTROL PANEL*\n\nNiche diye gaye options select karein:"
                             keyboard = {
                                 "inline_keyboard": [
-                                    [{"text": "📊 Check Stock", "callback_data": "menu_stock"}],
+                                    [
+                                        {"text": "📊 Check Stock", "callback_data": "menu_stock"},
+                                        {"text": "🔑 Generate Key", "callback_data": "menu_gen_key"}
+                                    ],
                                     [
                                         {"text": "➕ Add Single", "callback_data": "menu_add_single"},
                                         {"text": "📦 Add Bulk", "callback_data": "menu_add_bulk"}
@@ -220,7 +223,7 @@ def telegram_polling():
                                 else:
                                     send_telegram_message(chat_id, "❌ Invalid category or empty key!")
                             else:
-                                send_telegram_message(chat_id, "⚠️️ Format: `/add 1day YOUR_KEY`")
+                                send_telegram_message(chat_id, "⚠ Format: `/add 1day YOUR_KEY`")
 
                     elif "callback_query" in update:
                         cq = update["callback_query"]
@@ -245,6 +248,50 @@ def telegram_polling():
                             )
                             answer_callback_query(cq_id, "Stock fetched!")
                             send_telegram_message(ADMIN_ID, stock_msg)
+
+                        # --- NEW: Generate Key Menu & Logic ---
+                        elif data_str == "menu_gen_key":
+                            answer_callback_query(cq_id, "Generate Key Menu")
+                            markup = {
+                                "inline_keyboard": [
+                                    [
+                                        {"text": "⏱ 5hr", "callback_data": "gen_cat_5hr"},
+                                        {"text": "⚡ 1 Day", "callback_data": "gen_cat_1 Day"}
+                                    ],
+                                    [
+                                        {"text": "🔥 7 Days", "callback_data": "gen_cat_7 Days"},
+                                        {"text": "👑 30 Days", "callback_data": "gen_cat_30 Days"}
+                                    ]
+                                ]
+                            }
+                            send_telegram_message(ADMIN_ID, "🔑 *GENERATE KEY*\n\nDuration select karein:", markup)
+
+                        elif data_str.startswith("gen_cat_"):
+                            cat_name = data_str.replace("gen_cat_", "")
+                            stock_list = db["stocks"].get(cat_name, [])
+                            if stock_list:
+                                assigned_key = stock_list.pop(0).strip()
+                                db["used_keys"].append({
+                                    "key": assigned_key,
+                                    "category": cat_name,
+                                    "time": time.strftime("%Y-%m-%d %H:%M:%S")
+                                })
+                                save_db(db)
+                                answer_callback_query(cq_id, "Key Generated!")
+                                send_telegram_message(
+                                    ADMIN_ID,
+                                    f"✅ *KEY GENERATED SUCCESSFULLY!*\n\n"
+                                    f"• *Duration:* {cat_name}\n"
+                                    f"• *Key:* `{assigned_key}`\n"
+                                    f"• *Stock Left:* {len(stock_list)}"
+                                )
+                            else:
+                                answer_callback_query(cq_id, "❌ Out of stock!")
+                                send_telegram_message(
+                                    ADMIN_ID,
+                                    f"❌ *Out of Stock!*\nDuration *{cat_name}* ke liye koi unused key available nahi hai."
+                                )
+                        # ----------------------------------------
 
                         elif data_str == "menu_used":
                             used_list = db["used_keys"][-15:]
@@ -297,7 +344,7 @@ def telegram_polling():
                                     ]
                                 ]
                             }
-                            send_telegram_message(ADMIN_ID, "🗑️️ *DELETE STOCK MENU*\n\nCategory select karein jiska saara unused stock clear karna hai:", markup)
+                            send_telegram_message(ADMIN_ID, "🗑 *DELETE STOCK MENU*\n\nCategory select karein jiska saara unused stock clear karna hai:", markup)
 
                         elif data_str.startswith("clear_stock_"):
                             cat_name = data_str.replace("clear_stock_", "")
