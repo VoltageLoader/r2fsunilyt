@@ -294,7 +294,7 @@ def handle_generate_key_menu_direct(message):
         "🔑 *GENERATE KEY*\n\n"
         "Duration select karein:",
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=markup,
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
@@ -431,7 +431,7 @@ def handle_add_single_menu_direct(message):
         "➕ *ADD SINGLE KEY*\n\n"
         "Duration select karein:",
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=markup,
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
@@ -482,7 +482,7 @@ def handle_add_bulk_menu_direct(message):
         "📦 *ADD BULK KEYS*\n\n"
         "Duration select karein:",
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=markup,
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
@@ -508,7 +508,7 @@ def callback_add_bulk_dur(call):
 
 
 # ============================================================
-# 5. DELETE KEY HANDLER & OPTIONS (UPDATED AS REQUESTED)
+# 5. DELETE KEY HANDLER & OPTIONS
 # ============================================================
 
 def handle_delete_key_menu_direct(message):
@@ -518,8 +518,8 @@ def handle_delete_key_menu_direct(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🗑️ Delete Key (Single/Custom)", callback_data="del_single_menu"),
-        types.InlineKeyboardButton("🗑️ Delete All Key (Duration/All)", callback_data="del_all_menu"),
+        types.InlineKeyboardButton("🗑️ Delete Key", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("🗑️ Delete All Key", callback_data="del_all_menu"),
     )
 
     sent_msg = bot.send_message(
@@ -527,14 +527,9 @@ def handle_delete_key_menu_direct(message):
         "🗑️ *DELETE STOCK OPTIONS*\n\n"
         "Niche diye gaye options mein se select karein:",
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=markup,
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
-    bot.edit_message_reply_markup(
-        chat_id=message.chat.id,
-        message_id=sent_msg.message_id,
-        reply_markup=markup
-    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_all_menu"])
@@ -582,11 +577,16 @@ def callback_del_dur_prompt(call):
 
     if call.data == "cancel_del_all":
         bot.answer_callback_query(call.id, "Cancelled.")
-        bot.edit_message_text(
-            "❌ Action cancelled.",
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except Exception:
+            pass
+        bot.send_message(
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown"
+            "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+            "Niche diye gaye options select karein:",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(),
         )
         return
 
@@ -595,8 +595,8 @@ def callback_del_dur_prompt(call):
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("✅ Yes I am 100% Sure", callback_data=f"conf_del_{target}"),
-        types.InlineKeyboardButton("❌ No I am not Sure", callback_data="cancel_del_all")
+        types.InlineKeyboardButton("✅ Yes, I am 100% Sure", callback_data=f"conf_del_{target}"),
+        types.InlineKeyboardButton("❌ No, I am not Sure", callback_data="cancel_del_all")
     )
     bot.answer_callback_query(call.id)
     bot.edit_message_text(
@@ -616,10 +616,10 @@ def callback_confirm_deletion(call):
     target = call.data.replace("conf_del_", "")
 
     if target == "ALL":
-        keys_collection.delete_many({})
+        res = keys_collection.delete_many({})
         bot.answer_callback_query(call.id, "All keys deleted successfully!", show_alert=True)
         bot.edit_message_text(
-            "✅ Database ki saari keys successfully delete kar di gayi hain!",
+            f"✅ Database ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown"
