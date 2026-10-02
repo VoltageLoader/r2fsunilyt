@@ -508,7 +508,7 @@ def callback_add_bulk_dur(call):
 
 
 # ============================================================
-# 5. DELETE KEY HANDLER & OPTIONS
+# 5. DELETE KEY HANDLER & OPTIONS (UPDATED)
 # ============================================================
 
 def handle_delete_key_menu_direct(message):
@@ -518,8 +518,8 @@ def handle_delete_key_menu_direct(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🗑️ Delete Key", callback_data="del_single_menu"),
-        types.InlineKeyboardButton("🗑️ Delete All Key", callback_data="del_all_menu"),
+        types.InlineKeyboardButton("🗑️ Single Delete", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("🗑️ Delete All", callback_data="del_all_menu_main"),
     )
 
     sent_msg = bot.send_message(
@@ -532,7 +532,7 @@ def handle_delete_key_menu_direct(message):
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
 
-@bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_all_menu"])
+@bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_all_menu_main"])
 def callback_delete_submenus(call):
     if call.from_user.id != ADMIN_ID:
         return
@@ -549,25 +549,47 @@ def callback_delete_submenus(call):
             parse_mode="Markdown"
         )
 
-    elif data == "del_all_menu":
+    elif data == "del_all_menu_main":
         bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
-        for d in durations:
-            cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"🗑️ {d}", callback_data=f"del_dur_prompt_{cb_val}"))
-        
-        markup.add(types.InlineKeyboardButton("🔥 All Duration Keys", callback_data="del_dur_prompt_ALL"))
-        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all"))
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("⏱️ Delete Key by Duration", callback_data="del_by_duration_menu"),
+            types.InlineKeyboardButton("🔥 Delete All Duration Keys", callback_data="del_dur_prompt_ALL"),
+            types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all")
+        )
 
         bot.edit_message_text(
-            "🗑️ *DELETE ALL KEYS*\n\n"
-            "Kis duration ki keys delete karni hain select karein:",
+            "🗑️ *DELETE ALL OPTIONS*\n\n"
+            "Aap kya delete karna chahte hain select karein:",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown",
             reply_markup=markup
         )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "del_by_duration_menu")
+def callback_del_by_duration_menu(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(f"🗑️ {d}", callback_data=f"del_dur_prompt_{cb_val}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_all_menu_main"))
+
+    bot.edit_message_text(
+        "⏱️ *DELETE KEY BY DURATION*\n\n"
+        "Kis duration ki keys delete karni hain select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("del_dur_prompt_") or call.data == "cancel_del_all")
