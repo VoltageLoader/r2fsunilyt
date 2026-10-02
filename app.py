@@ -102,7 +102,7 @@ user_states = {}
 
 
 # ============================================================
-# KEYBOARDS (SUPER ADMIN CONTROL PANEL MENU)
+# KEYBOARDS
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -268,7 +268,7 @@ def handle_sold_key_msg(message):
 
 
 # ============================================================
-# 1. GENERATE KEY HANDLER
+# 1. GENERATE KEY HANDLER (WITH GET KEY STEP)
 # ============================================================
 
 def handle_generate_key_menu_direct(message):
@@ -284,7 +284,7 @@ def handle_generate_key_menu_direct(message):
         stock_count = keys_collection.count_documents({"duration": d, "status": "unused"})
         markup.add(
             types.InlineKeyboardButton(
-                f"🔑 {d} (Stock: {stock_count})",
+                f"{d} (Stock: {stock_count})",
                 callback_data=f"gen_dur_{cb_val}"
             )
         )
@@ -292,7 +292,7 @@ def handle_generate_key_menu_direct(message):
     sent_msg = bot.send_message(
         message.chat.id,
         "🔑 *GENERATE KEY*\n\n"
-        "Apni pasand ka duration select karein:",
+        "Duration select karein:",
         parse_mode="Markdown",
         reply_markup=get_back_reply_keyboard(),
     )
@@ -300,12 +300,38 @@ def handle_generate_key_menu_direct(message):
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("gen_dur_"))
-def callback_generate_key(call):
+def callback_generate_key_duration(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
         return
 
     duration = call.data.replace("gen_dur_", "").replace("_", " ")
+    stock_count = keys_collection.count_documents({"duration": duration, "status": "unused"})
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(f"📥 Get Key ({duration})", callback_data=f"get_key_{call.data.replace('gen_dur_', '')}")
+    )
+
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"🔑 *Duration Selected:* `{duration}`\n"
+        f"📦 *Available Stock:* `{stock_count}`\n\n"
+        f"Niche diye gaye button par click karke key prapt karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("get_key_"))
+def callback_get_key_final(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
+        return
+
+    duration = call.data.replace("get_key_", "").replace("_", " ")
     user_id = call.from_user.id
 
     key_row = keys_collection.find_one(
@@ -482,7 +508,7 @@ def callback_add_bulk_dur(call):
 
 
 # ============================================================
-# 5. DELETE KEY HANDLER & OPTIONS
+# 5. DELETE KEY HANDLER & OPTIONS (UPDATED AS REQUESTED)
 # ============================================================
 
 def handle_delete_key_menu_direct(message):
@@ -492,9 +518,8 @@ def handle_delete_key_menu_direct(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🗑️ Delete Single Key", callback_data="del_single_menu"),
-        types.InlineKeyboardButton("📦 Delete Bulk Keys", callback_data="del_bulk_menu"),
-        types.InlineKeyboardButton("⚠️ Clear All Stock", callback_data="del_clear_all"),
+        types.InlineKeyboardButton("🗑️ Delete Key (Single/Custom)", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("🗑️ Delete All Key (Duration/All)", callback_data="del_all_menu"),
     )
 
     sent_msg = bot.send_message(
@@ -512,8 +537,8 @@ def handle_delete_key_menu_direct(message):
     )
 
 
-@bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_bulk_menu", "del_clear_all"])
-def callback_delete_options(call):
+@bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_all_menu"])
+def callback_delete_submenus(call):
     if call.from_user.id != ADMIN_ID:
         return
 
@@ -529,48 +554,82 @@ def callback_delete_options(call):
             parse_mode="Markdown"
         )
 
-    elif data == "del_bulk_menu":
-        bot.answer_callback_query(call.id)
-        user_states[user_id] = {"type": "waiting_del_bulk"}
-        bot.send_message(
-            call.message.chat.id,
-            "💬 Jin keys ko delete karna hai unhe **ek line mein ek key** karke yahan paste/send karein:",
-            parse_mode="Markdown"
-        )
-
-    elif data == "del_clear_all":
+    elif data == "del_all_menu":
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("✅ Yes, Clear All", callback_data="confirm_clear_all"),
-            types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_clear_all")
-        )
-        bot.send_message(
+        durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+        for d in durations:
+            cb_val = d.replace(" ", "_")
+            markup.add(types.InlineKeyboardButton(f"🗑️ {d}", callback_data=f"del_dur_prompt_{cb_val}"))
+        
+        markup.add(types.InlineKeyboardButton("🔥 All Duration Keys", callback_data="del_dur_prompt_ALL"))
+        markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all"))
+
+        bot.edit_message_text(
+            "🗑️ *DELETE ALL KEYS*\n\n"
+            "Kis duration ki keys delete karni hain select karein:",
             call.message.chat.id,
-            "⚠ *WARNING:* Kya aap database ka saara stock delete karna chahte hain?",
+            call.message.message_id,
             parse_mode="Markdown",
             reply_markup=markup
         )
 
 
-@bot.callback_query_handler(func=lambda call: call.data in ["confirm_clear_all", "cancel_clear_all"])
-def callback_clear_all_confirm(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("del_dur_prompt_") or call.data == "cancel_del_all")
+def callback_del_dur_prompt(call):
     if call.from_user.id != ADMIN_ID:
         return
 
-    if call.data == "confirm_clear_all":
-        keys_collection.delete_many({})
-        bot.answer_callback_query(call.id, "All stock cleared successfully!", show_alert=True)
+    if call.data == "cancel_del_all":
+        bot.answer_callback_query(call.id, "Cancelled.")
         bot.edit_message_text(
-            "✅ Database ka saara stock successfully clear kar diya gaya hai!",
+            "❌ Action cancelled.",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown"
+        )
+        return
+
+    target = call.data.replace("del_dur_prompt_", "")
+    display_name = "All Durations" if target == "ALL" else target.replace("_", " ")
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Yes I am 100% Sure", callback_data=f"conf_del_{target}"),
+        types.InlineKeyboardButton("❌ No I am not Sure", callback_data="cancel_del_all")
+    )
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"⚠️ *WARNING:* Kya aap pakka `{display_name}` ki saari keys delete karna chahte hain?",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("conf_del_"))
+def callback_confirm_deletion(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    target = call.data.replace("conf_del_", "")
+
+    if target == "ALL":
+        keys_collection.delete_many({})
+        bot.answer_callback_query(call.id, "All keys deleted successfully!", show_alert=True)
+        bot.edit_message_text(
+            "✅ Database ki saari keys successfully delete kar di gayi hain!",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown"
         )
     else:
-        bot.answer_callback_query(call.id, "Cancelled.")
+        duration = target.replace("_", " ")
+        res = keys_collection.delete_many({"duration": duration})
+        bot.answer_callback_query(call.id, f"{res.deleted_count} keys deleted!", show_alert=True)
         bot.edit_message_text(
-            "❌ Action cancelled.",
+            f"✅ *{duration}* ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
             call.message.chat.id,
             call.message.message_id,
             parse_mode="Markdown"
@@ -699,7 +758,7 @@ def callback_payment_handling(call):
         message.from_user.id == ADMIN_ID
         and message.from_user.id in user_states
         and user_states[message.from_user.id].get("type")
-        in ["waiting_add_single_key", "waiting_add_bulk_keys", "waiting_del_single", "waiting_del_bulk"]
+        in ["waiting_add_single_key", "waiting_add_bulk_keys", "waiting_del_single"]
 )
 def handle_user_state_input(message):
     user_id = message.from_user.id
@@ -780,21 +839,6 @@ def handle_user_state_input(message):
                 bot.reply_to(message, f"❌ Yeh key database mein nahi mili.")
         except Exception as e:
             bot.reply_to(message, f"❌ Error: {e}")
-
-    elif action_type == "waiting_del_bulk":
-        del user_states[user_id]
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-        deleted_count = 0
-        for line in lines:
-            res = keys_collection.delete_one({"license_key": line})
-            deleted_count += res.deleted_count
-
-        bot.reply_to(
-            message,
-            f"🗑️ *BULK DELETE REPORT*\n\n"
-            f"• *Total Keys Deleted:* `{deleted_count}`",
-            parse_mode="Markdown"
-        )
 
 
 # ============================================================
