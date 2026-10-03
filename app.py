@@ -2,8 +2,10 @@ import os
 import re
 import threading
 import time
+import json
+import queue
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import telebot
 from telebot import types
 from pymongo import MongoClient, ASCENDING, DESCENDING
@@ -16,6 +18,7 @@ from pymongo.errors import DuplicateKeyError
 
 TOKEN = os.environ.get("BOT_TOKEN")
 MONGODB_URI = os.environ.get("MONGODB_URI")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://r2fsunilyt-1.onrender.com")
 
 if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set")
@@ -27,6 +30,24 @@ ADMIN_ID = 6795305850
 OWNER_USERNAME = "R2FSUNILYT"
 
 bot = telebot.TeleBot(TOKEN)
+
+UPLOAD_FOLDER = 'static/uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Thread-safe client streams dictionary for Real-Time 0-delay messaging
+client_queues = {}
+queues_lock = threading.Lock()
+
+def broadcast_message(device_id, message_data):
+    """Instantly pushes the message to any active live stream connection of the given device_id"""
+    with queues_lock:
+        if device_id in client_queues:
+            json_str = json.dumps(message_data)
+            for q in client_queues[device_id]:
+                try:
+                    q.put(json_str)
+                except Exception:
+                    pass
 
 
 # ============================================================
@@ -80,7 +101,7 @@ try:
         name="device_chat_timestamp"
     )
 
-    print("MongoDB connected successfully with Chat Support!")
+    print("MongoDB connected successfully with Real-Time Chat & Media Support!")
 
 except Exception as e:
     raise RuntimeError(f"MongoDB connection failed: {e}")
@@ -128,7 +149,7 @@ def get_main_reply_keyboard():
     )
 
     markup.add(
-        types.KeyboardButton("🗑️️ DELETE KEY"),
+        types.KeyboardButton("🗑 DELETE KEY"),
         types.KeyboardButton("📋 SHOW SOLD KEY")
     )
 
@@ -326,8 +347,8 @@ def handle_admin_reply_to_user(message):
         else:
             bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
 
-    elif "NEW CHAT FROM APP" in reply_text:
-        match = re.search(r"🆔 \*Device ID:\* `([^`]+)`", reply_text)
+    elif "NEW CHAT FROM APP" in reply_text or "Media from Device:" in reply_text:
+        match = re.search(r"🆔 \*Device ID:\* `([^`]+)`", reply_text) or re.search(r"Device: `([^`]+)`", reply_text)
         if match:
             device_id = match.group(1)
             admin_reply = message.text
@@ -336,11 +357,19 @@ def handle_admin_reply_to_user(message):
                 "device_id": device_id,
                 "sender": "admin",
                 "message": admin_reply,
+                "media_url": "",
                 "timestamp": time.time()
             })
 
+            # Instantly push the admin reply to the specific user's live stream (0 delay)
+            broadcast_message(device_id, {
+                "sender": "admin",
+                "message": admin_reply,
+                "media_url": ""
+            })
+
             try:
-                bot.reply_to(message, "✅ App chat reply successfully bhej diya gaya hai!")
+                bot.reply_to(message, f"✅ App chat reply successfully delivered instantly to device: `{device_id}`", parse_mode="Markdown")
             except Exception as e:
                 bot.reply_to(message, f"❌ Error: {e}")
         else:
@@ -652,7 +681,7 @@ def callback_delete_submenus(call):
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("⏱️ Delete Key by Duration", callback_data="del_by_duration_menu"),
+            types.InlineKeyboardButton("⏱️️ Delete Key by Duration", callback_data="del_by_duration_menu"),
             types.InlineKeyboardButton("🔥 Delete All Duration Keys", callback_data="del_dur_prompt_ALL"),
             types.InlineKeyboardButton("🔙 Back", callback_data="del_main_menu_back"),
             types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all")
@@ -925,7 +954,7 @@ def handle_user_state_input(message):
     action_type = state["type"]
     text = (message.text or "").strip()
 
-    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
+    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
         return
 
     if action_type == "waiting_add_single_key":
@@ -1009,7 +1038,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB & CHAT SUPPORT!"
+    return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB & REAL-TIME CHAT SUPPORT!"
 
 
 # --- 1. Free Key API (1 Device = 5 Ghante mein 1 Baar) ---
@@ -1175,18 +1204,27 @@ def send_chat():
     data = request.json or {}
     device_id = data.get("device_id")
     sender = data.get("sender", "user")
-    message = data.get("message")
+    message = data.get("message", "")
+    media_url = data.get("media_url", "")
 
-    if not device_id or not message:
-        return jsonify({"error": "device_id and message required"}), 400
+    if not device_id or (not message and not media_url):
+        return jsonify({"error": "device_id and message/media required"}), 400
 
     chat_doc = {
         "device_id": device_id,
         "sender": sender,
         "message": message,
+        "media_url": media_url,
         "timestamp": time.time()
     }
     chats_collection.insert_one(chat_doc)
+
+    # Broadcast live to app streams (0 delay)
+    broadcast_message(device_id, {
+        "sender": sender,
+        "message": message,
+        "media_url": media_url
+    })
 
     if sender == "user":
         admin_msg = (
@@ -1202,14 +1240,88 @@ def send_chat():
     return jsonify({"status": "success"})
 
 
-# --- 5. App Chat Get API (Polling from Android App) ---
+# --- 5. Media Upload API ---
+@app.route('/api/send_media', methods=['POST'])
+def send_media():
+    try:
+        device_id = request.form.get("device_id")
+        file = request.files.get("file")
+
+        if not device_id or not file:
+            return jsonify({"error": "Missing fields"}), 400
+
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(file_path)
+        media_url = f"{RENDER_EXTERNAL_URL}/{file_path}"
+
+        chat_doc = {
+            "device_id": device_id,
+            "sender": "user",
+            "message": "[Media File]",
+            "media_url": media_url,
+            "timestamp": time.time()
+        }
+        chats_collection.insert_one(chat_doc)
+
+        broadcast_message(device_id, {
+            "sender": "user",
+            "message": "[Media File]",
+            "media_url": media_url
+        })
+
+        try:
+            with open(file_path, 'rb') as f:
+                bot.send_document(
+                    ADMIN_ID,
+                    f,
+                    caption=f"📎 Media from Device: `{device_id}`",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            print("Error sending media to telegram:", e)
+
+        return jsonify({"status": "success", "url": media_url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- 6. Real-Time Server-Sent Events (SSE) Stream for Instant Push ---
+@app.route('/api/stream/<device_id>')
+def stream(device_id):
+    q = queue.Queue()
+    with queues_lock:
+        if device_id not in client_queues:
+            client_queues[device_id] = []
+        client_queues[device_id].append(q)
+
+    def event_stream():
+        try:
+            while True:
+                msg_data = q.get()
+                yield f"data: {msg_data}\n\n"
+        except GeneratorExit:
+            with queues_lock:
+                if device_id in client_queues and q in client_queues[device_id]:
+                    client_queues[device_id].remove(q)
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
+# --- 7. App Chat Get API (Initial History Load) ---
 @app.route('/api/get_chat/<device_id>', methods=['GET'])
 def get_chat(device_id):
     messages = list(
         chats_collection.find({"device_id": device_id}, {"_id": 0})
         .sort("timestamp", ASCENDING)
     )
-    return jsonify(messages)
+    formatted = []
+    for m in messages:
+        formatted.append({
+            "sender": m.get("sender", "user"),
+            "message": m.get("message", ""),
+            "media_url": m.get("media_url", "")
+        })
+    return jsonify(formatted)
 
 
 def run_flask():
@@ -1235,7 +1347,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Webhook cleanup error: {e}")
 
-    print("Bot and Flask API Server are running with MongoDB and Live Chat Support...")
+    print("Bot and Flask API Server are running with MongoDB, SSE Streaming & Live Chat Support...")
 
     bot.infinity_polling(
         timeout=60,
