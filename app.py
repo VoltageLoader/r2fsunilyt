@@ -70,7 +70,7 @@ try:
     counters_collection = db["counters"]
     payments_collection = db["payments_table"]
     device_cooldowns_collection = db["device_cooldowns"]
-    chats_collection = db["chats"]  # Added for App Chat Support
+    chats_collection = db["chats"]
 
     keys_collection.create_index(
         [("license_key", ASCENDING)],
@@ -129,7 +129,7 @@ user_states = {}
 
 
 # ============================================================
-# KEYBOARDS (ALL OPTIONS VISIBLE)
+# KEYBOARDS (BOTTOM REPLY MENU)
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -149,7 +149,7 @@ def get_main_reply_keyboard():
     )
 
     markup.add(
-        types.KeyboardButton("🗑 DELETE KEY"),
+        types.KeyboardButton("🗑️ DELETE KEY"),
         types.KeyboardButton("📋 SHOW SOLD KEY")
     )
 
@@ -190,7 +190,7 @@ def setup_bot_commands():
 
 
 # ============================================================
-# START & SHORTCUT COMMANDS (ADMIN & USER HANDLING)
+# START & SHORTCUT COMMANDS
 # ============================================================
 
 @bot.message_handler(commands=["start", "generate", "stock", "addsingle", "addbulk", "delete", "sold"])
@@ -298,7 +298,7 @@ def handle_sold_key_msg(message):
 
 
 # ============================================================
-# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM (FIXED)
+# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM (ROBUST)
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.from_user.id != ADMIN_ID)
@@ -325,14 +325,12 @@ def handle_user_messages(message):
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message)
 def handle_admin_reply_to_user(message):
-    # Text ya Caption dono ko check karega (Media messages ke liye caption zaroori hai)
     reply_text = message.reply_to_message.text or message.reply_to_message.caption
     if not reply_text:
         return
 
     if "NEW MESSAGE FROM USER" in reply_text:
-        # Plain text ke liye safe regex (bina markdown * aur ` par depend kiye)
-        match = re.search(r"User ID[:\s]*(\d+)", reply_text, re.IGNORECASE)
+        match = re.search(r"User\s*ID[^\d]*(\d+)", reply_text, re.IGNORECASE)
         if match:
             target_user_id = int(match.group(1))
             admin_reply = message.text
@@ -343,15 +341,14 @@ def handle_admin_reply_to_user(message):
                     f"💬 *Message from Admin:*\n\n{admin_reply}",
                     parse_mode="Markdown"
                 )
-                bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!")
+                bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!", reply_markup=get_main_reply_keyboard())
             except Exception as e:
-                bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}")
+                bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}", reply_markup=get_main_reply_keyboard())
         else:
-            bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
+            bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.", reply_markup=get_main_reply_keyboard())
 
     elif "NEW CHAT FROM APP" in reply_text or "Media from Device" in reply_text:
-        # Plain text ke liye safe regex (Device ID extract karne ke liye)
-        match = re.search(r"Device ID[:\s]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE) or re.search(r"Device[:\s]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE)
+        match = re.search(r"Device\s*ID[^\w]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE) or re.search(r"Device[^\w]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE)
         if match:
             device_id = match.group(1)
             admin_reply = message.text
@@ -364,7 +361,6 @@ def handle_admin_reply_to_user(message):
                 "timestamp": time.time()
             })
 
-            # Instantly push the admin reply to the specific user's live stream (0 delay)
             broadcast_message(device_id, {
                 "sender": "admin",
                 "message": admin_reply,
@@ -372,11 +368,11 @@ def handle_admin_reply_to_user(message):
             })
 
             try:
-                bot.reply_to(message, f"✅ App chat reply successfully delivered instantly to device: `{device_id}`", parse_mode="Markdown")
+                bot.reply_to(message, f"✅ App chat reply successfully delivered instantly to device: `{device_id}`", parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
             except Exception as e:
-                bot.reply_to(message, f"❌ Error: {e}")
+                bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
         else:
-            bot.reply_to(message, "❌ Is message se Device ID detect nahi ho payi.")
+            bot.reply_to(message, "❌ Is message se Device ID detect nahi ho payi.", reply_markup=get_main_reply_keyboard())
 
 
 # ============================================================
@@ -483,6 +479,7 @@ def callback_get_key_final(call):
         f"• *Duration:* {duration}\n"
         f"• *License Key:* `{license_key}`",
         parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard()
     )
 
 
@@ -512,7 +509,7 @@ def handle_all_key_stock_direct(message):
         message.chat.id,
         text,
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(),
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
@@ -760,7 +757,7 @@ def callback_del_by_duration_menu(call):
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_all_menu_main"))
 
     bot.edit_message_text(
-        "⏱️️ *DELETE KEY BY DURATION*\n\n"
+        "⏱️ *DELETE KEY BY DURATION*\n\n"
         "Kis duration ki keys delete karni hain select karein:",
         call.message.chat.id,
         call.message.message_id,
@@ -817,21 +814,21 @@ def callback_confirm_deletion(call):
     if target == "ALL":
         res = keys_collection.delete_many({})
         bot.answer_callback_query(call.id, "All keys deleted successfully!", show_alert=True)
-        bot.edit_message_text(
-            f"✅ Database ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+        bot.send_message(
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown"
+            f"✅ Database ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
         )
     else:
         duration = target.replace("_", " ")
         res = keys_collection.delete_many({"duration": duration})
         bot.answer_callback_query(call.id, f"{res.deleted_count} keys deleted!", show_alert=True)
-        bot.edit_message_text(
-            f"✅ *{duration}* ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+        bot.send_message(
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown"
+            f"✅ *{duration}* ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
         )
 
 
@@ -845,21 +842,21 @@ def callback_confirm_sold_deletion(call):
     if target == "ALL":
         res = keys_collection.delete_many({"status": "used"})
         bot.answer_callback_query(call.id, "All sold keys deleted successfully!", show_alert=True)
-        bot.edit_message_text(
-            f"✅ Database ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+        bot.send_message(
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown"
+            f"✅ Database ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
         )
     else:
         duration = target.replace("_", " ")
         res = keys_collection.delete_many({"duration": duration, "status": "used"})
         bot.answer_callback_query(call.id, f"{res.deleted_count} sold keys deleted!", show_alert=True)
-        bot.edit_message_text(
-            f"✅ *{duration}* ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+        bot.send_message(
             call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown"
+            f"✅ *{duration}* ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
         )
 
 
@@ -884,7 +881,7 @@ def handle_show_sold_key_direct(message):
             message.chat.id,
             "❌ Abhi tak koi bhi key use/sold nahi hui hai.",
             parse_mode="Markdown",
-            reply_markup=get_back_reply_keyboard(),
+            reply_markup=get_main_reply_keyboard(),
         )
         user_states[user_id] = {"response_msg_id": sent_msg.message_id}
         return
@@ -907,7 +904,7 @@ def handle_show_sold_key_direct(message):
         message.chat.id,
         text,
         parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard(),
+        reply_markup=get_main_reply_keyboard(),
     )
     user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
@@ -957,14 +954,14 @@ def handle_user_state_input(message):
     action_type = state["type"]
     text = (message.text or "").strip()
 
-    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑 DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
+    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
         return
 
     if action_type == "waiting_add_single_key":
         duration = state.get("duration")
         del user_states[user_id]
         if not text:
-            bot.reply_to(message, "❌ Key empty nahi ho sakti!")
+            bot.reply_to(message, "❌ Key empty nahi ho sakti!", reply_markup=get_main_reply_keyboard())
             return
         try:
             new_id = get_next_id("key_id")
@@ -975,18 +972,18 @@ def handle_user_state_input(message):
                 "status": "unused",
                 "assigned_to": None
             })
-            bot.reply_to(message, f"✅ Single Key successfully added!\n• Duration: {duration}\n• Key: `{text}`", parse_mode="Markdown")
+            bot.reply_to(message, f"✅ Single Key successfully added!\n• Duration: {duration}\n• Key: `{text}`", parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
         except DuplicateKeyError:
-            bot.reply_to(message, "❌ Yeh license key pehle se database mein mojood hai!")
+            bot.reply_to(message, "❌ Yeh license key pehle se database mein mojood hai!", reply_markup=get_main_reply_keyboard())
         except Exception as e:
-            bot.reply_to(message, f"❌ Error: {e}")
+            bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
 
     elif action_type == "waiting_add_bulk_keys":
         duration = state.get("duration")
         del user_states[user_id]
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         if not lines:
-            bot.reply_to(message, "❌ Koi keys nahi mili!")
+            bot.reply_to(message, "❌ Koi keys nahi mili!", reply_markup=get_main_reply_keyboard())
             return
         added_count = 0
         duplicate_count = 0
@@ -1012,7 +1009,8 @@ def handle_user_state_input(message):
             f"• *Duration:* {duration}\n"
             f"• *Successfully Added:* `{added_count}`\n"
             f"• *Duplicates (Skipped):* `{duplicate_count}`",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
         )
 
     elif action_type == "waiting_del_single":
@@ -1025,11 +1023,11 @@ def handle_user_state_input(message):
                 result = keys_collection.delete_one({"license_key": query})
 
             if result.deleted_count > 0:
-                bot.reply_to(message, f"✅ Key successfully delete kar di gayi hai!")
+                bot.reply_to(message, f"✅ Key successfully delete kar di gayi hai!", reply_markup=get_main_reply_keyboard())
             else:
-                bot.reply_to(message, f"❌ Yeh key database mein nahi mili.")
+                bot.reply_to(message, f"❌ Yeh key database mein nahi mili.", reply_markup=get_main_reply_keyboard())
         except Exception as e:
-            bot.reply_to(message, f"❌ Error: {e}")
+            bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
 
 
 # ============================================================
@@ -1044,7 +1042,6 @@ def home():
     return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB & REAL-TIME CHAT SUPPORT!"
 
 
-# --- 1. Free Key API (1 Device = 5 Ghante mein 1 Baar) ---
 @app.route('/api/submit_free_task', methods=['POST'])
 def submit_free_task():
     data = request.json or {}
@@ -1093,7 +1090,6 @@ def submit_free_task():
     return jsonify({"status": "success", "key": license_key})
 
 
-# --- 2. Payment Submission & Auto-Approval API ---
 @app.route('/api/submit_payment', methods=['POST'])
 def submit_payment():
     data = request.json or {}
@@ -1188,7 +1184,6 @@ def submit_payment():
     return jsonify({"status": "success", "key": license_key})
 
 
-# --- 3. Check Status API ---
 @app.route('/api/check_status/<utr>', methods=['GET'])
 def check_status(utr):
     payment_info = payments_collection.find_one({"utr": utr})
@@ -1201,7 +1196,6 @@ def check_status(utr):
     })
 
 
-# --- 4. App Chat Send API (From Android App to Admin Telegram Bot) ---
 @app.route('/api/send_chat', methods=['POST'])
 def send_chat():
     data = request.json or {}
@@ -1222,7 +1216,6 @@ def send_chat():
     }
     chats_collection.insert_one(chat_doc)
 
-    # Broadcast live to app streams (0 delay)
     broadcast_message(device_id, {
         "sender": sender,
         "message": message,
@@ -1243,7 +1236,6 @@ def send_chat():
     return jsonify({"status": "success"})
 
 
-# --- 5. Media Upload API ---
 @app.route('/api/send_media', methods=['POST'])
 def send_media():
     try:
@@ -1288,7 +1280,6 @@ def send_media():
         return jsonify({"error": str(e)}), 500
 
 
-# --- 6. Real-Time Server-Sent Events (SSE) Stream for Instant Push ---
 @app.route('/api/stream/<device_id>')
 def stream(device_id):
     q = queue.Queue()
@@ -1310,7 +1301,6 @@ def stream(device_id):
     return Response(event_stream(), mimetype="text/event-stream")
 
 
-# --- 7. App Chat Get API (Initial History Load) ---
 @app.route('/api/get_chat/<device_id>', methods=['GET'])
 def get_chat(device_id):
     messages = list(
