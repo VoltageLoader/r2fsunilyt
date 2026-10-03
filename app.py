@@ -298,7 +298,7 @@ def handle_sold_key_msg(message):
 
 
 # ============================================================
-# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM
+# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM (FIXED)
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.from_user.id != ADMIN_ID)
@@ -325,12 +325,14 @@ def handle_user_messages(message):
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message)
 def handle_admin_reply_to_user(message):
-    reply_text = message.reply_to_message.text
+    # Text ya Caption dono ko check karega (Media messages ke liye caption zaroori hai)
+    reply_text = message.reply_to_message.text or message.reply_to_message.caption
     if not reply_text:
         return
 
     if "NEW MESSAGE FROM USER" in reply_text:
-        match = re.search(r"🆔 \*User ID:\* `(\d+)`", reply_text)
+        # Plain text ke liye safe regex (bina markdown * aur ` par depend kiye)
+        match = re.search(r"User ID[:\s]*(\d+)", reply_text, re.IGNORECASE)
         if match:
             target_user_id = int(match.group(1))
             admin_reply = message.text
@@ -347,8 +349,9 @@ def handle_admin_reply_to_user(message):
         else:
             bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
 
-    elif "NEW CHAT FROM APP" in reply_text or "Media from Device:" in reply_text:
-        match = re.search(r"🆔 \*Device ID:\* `([^`]+)`", reply_text) or re.search(r"Device: `([^`]+)`", reply_text)
+    elif "NEW CHAT FROM APP" in reply_text or "Media from Device" in reply_text:
+        # Plain text ke liye safe regex (Device ID extract karne ke liye)
+        match = re.search(r"Device ID[:\s]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE) or re.search(r"Device[:\s]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE)
         if match:
             device_id = match.group(1)
             admin_reply = message.text
@@ -681,7 +684,7 @@ def callback_delete_submenus(call):
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("⏱️️ Delete Key by Duration", callback_data="del_by_duration_menu"),
+            types.InlineKeyboardButton("⏱ Delete Key by Duration", callback_data="del_by_duration_menu"),
             types.InlineKeyboardButton("🔥 Delete All Duration Keys", callback_data="del_dur_prompt_ALL"),
             types.InlineKeyboardButton("🔙 Back", callback_data="del_main_menu_back"),
             types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all")
@@ -757,7 +760,7 @@ def callback_del_by_duration_menu(call):
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_all_menu_main"))
 
     bot.edit_message_text(
-        "⏱️ *DELETE KEY BY DURATION*\n\n"
+        "⏱️️ *DELETE KEY BY DURATION*\n\n"
         "Kis duration ki keys delete karni hain select karein:",
         call.message.chat.id,
         call.message.message_id,
@@ -954,7 +957,7 @@ def handle_user_state_input(message):
     action_type = state["type"]
     text = (message.text or "").strip()
 
-    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
+    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑 DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
         return
 
     if action_type == "waiting_add_single_key":
