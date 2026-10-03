@@ -102,7 +102,7 @@ user_states = {}
 
 
 # ============================================================
-# KEYBOARDS
+# KEYBOARDS (ALL OPTIONS VISIBLE)
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -268,7 +268,7 @@ def handle_sold_key_msg(message):
 
 
 # ============================================================
-# 1. GENERATE KEY HANDLER (WITH GET KEY STEP)
+# 1. GENERATE KEY HANDLER
 # ============================================================
 
 def handle_generate_key_menu_direct(message):
@@ -277,7 +277,7 @@ def handle_generate_key_menu_direct(message):
         return
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
 
     for d in durations:
         cb_val = d.replace(" ", "_")
@@ -383,7 +383,7 @@ def handle_all_key_stock_direct(message):
     if user_id != ADMIN_ID:
         return
 
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
     text = "📊 *AVAILABLE KEY STOCK SUMMARY:*\n\n"
 
     for d in durations:
@@ -415,7 +415,7 @@ def handle_add_single_menu_direct(message):
         return
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
 
     for d in durations:
         cb_val = d.replace(" ", "_")
@@ -466,7 +466,7 @@ def handle_add_bulk_menu_direct(message):
         return
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
 
     for d in durations:
         cb_val = d.replace(" ", "_")
@@ -508,7 +508,7 @@ def callback_add_bulk_dur(call):
 
 
 # ============================================================
-# 5. DELETE KEY HANDLER & OPTIONS (UPDATED WITH SOLD KEY BLOCK DELETE)
+# 5. DELETE KEY HANDLER & OPTIONS
 # ============================================================
 
 def handle_delete_key_menu_direct(message):
@@ -597,7 +597,7 @@ def callback_del_main_menu_back(call):
     markup.add(
         types.InlineKeyboardButton("🗑️ Single Delete", callback_data="del_single_menu"),
         types.InlineKeyboardButton("🗑️ Delete Sold Keys", callback_data="del_sold_menu_main"),
-        types.InlineKeyboardButton("🗑 Delete All", callback_data="del_all_menu_main"),
+        types.InlineKeyboardButton("🗑️ Delete All", callback_data="del_all_menu_main"),
     )
     bot.edit_message_text(
         "🗑️ *DELETE STOCK OPTIONS*\n\n"
@@ -616,10 +616,10 @@ def callback_del_sold_by_duration_menu(call):
 
     bot.answer_callback_query(call.id)
     markup = types.InlineKeyboardMarkup(row_width=2)
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
-        markup.add(types.InlineKeyboardButton(f"🗑️️ Sold {d}", callback_data=f"conf_del_sold_{cb_val}"))
+        markup.add(types.InlineKeyboardButton(f"🗑 Sold {d}", callback_data=f"conf_del_sold_{cb_val}"))
     
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_sold_menu_main"))
 
@@ -640,7 +640,7 @@ def callback_del_by_duration_menu(call):
 
     bot.answer_callback_query(call.id)
     markup = types.InlineKeyboardMarkup(row_width=2)
-    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
         markup.add(types.InlineKeyboardButton(f"🗑 {d}", callback_data=f"del_dur_prompt_{cb_val}"))
@@ -992,7 +992,6 @@ def submit_payment():
     if not utr or not plan:
         return jsonify({"error": "Invalid data, UTR and Plan required"}), 400
 
-    # Check if payment already approved
     existing_payment = payments_collection.find_one({"utr": utr})
     if existing_payment and existing_payment.get("status") == "approved":
         return jsonify({
@@ -1001,7 +1000,6 @@ def submit_payment():
             "key": existing_payment.get("key", "")
         })
 
-    # Find unused key for the selected plan
     key_row = keys_collection.find_one(
         {"duration": plan, "status": "unused"},
         {"id": 1, "license_key": 1}
@@ -1031,7 +1029,6 @@ def submit_payment():
     license_key = key_row["license_key"]
     buy_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
-    # Auto assign key
     assigned_key = keys_collection.find_one_and_update(
         {"id": key_id, "status": "unused"},
         {"$set": {"status": "used", "assigned_to": f"UTR: {utr}"}},
@@ -1041,7 +1038,6 @@ def submit_payment():
     if not assigned_key:
         return jsonify({"status": "error", "message": "Key assignment failed, please try again."}), 400
 
-    # Save payment as approved with details
     payments_collection.update_one(
         {"utr": utr},
         {
@@ -1057,7 +1053,6 @@ def submit_payment():
         upsert=True
     )
 
-    # Send Notification to Admin with Delete/Revoke Option
     msg = (
         f"✅ *AUTO-APPROVED PAYMENT & KEY GIVEN!*\n\n"
         f"📦 *Plan / Duration:* {plan}\n"
@@ -1081,7 +1076,7 @@ def submit_payment():
     return jsonify({"status": "success", "key": license_key})
 
 
-# --- 3. Check Status API (Polled by App) ---
+# --- 3. Check Status API ---
 @app.route('/api/check_status/<utr>', methods=['GET'])
 def check_status(utr):
     payment_info = payments_collection.find_one({"utr": utr})
