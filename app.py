@@ -148,7 +148,7 @@ def get_back_reply_keyboard():
 
 def setup_bot_commands():
     commands = [
-        types.BotCommand("start", "Open Super Admin Control Panel"),
+        types.BotCommand("start", "Open Control Panel / Support"),
         types.BotCommand("generate", "Generate Key Shortcut"),
         types.BotCommand("stock", "Check Stock Shortcut"),
         types.BotCommand("addsingle", "Add Single Key Shortcut"),
@@ -163,7 +163,7 @@ def setup_bot_commands():
 
 
 # ============================================================
-# START & SHORTCUT COMMANDS (ADMIN ONLY)
+# START & SHORTCUT COMMANDS (ADMIN & USER HANDLING)
 # ============================================================
 
 @bot.message_handler(commands=["start", "generate", "stock", "addsingle", "addbulk", "delete", "sold"])
@@ -171,7 +171,10 @@ def handle_commands(message):
     user_id = message.from_user.id
 
     if user_id != ADMIN_ID:
-        bot.reply_to(message, "❌ Yeh bot sirf Admin ke liye restricted hai!")
+        bot.reply_to(
+            message,
+            "👋 Welcome!\n\nAap apni koi bhi query ya message yahan send kar sakte hain, jo seedha Admin tak pahunch jayegi."
+        )
         return
 
     cmd = message.text.split()[0].lower()
@@ -265,6 +268,56 @@ def handle_del_key_msg(message):
 @bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
 def handle_sold_key_msg(message):
     handle_show_sold_key_direct(message)
+
+
+# ============================================================
+# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.from_user.id != ADMIN_ID)
+def handle_user_messages(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "User"
+    username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
+
+    admin_msg = (
+        f"💬 *NEW MESSAGE FROM USER*\n\n"
+        f"👤 *Name:* {user_name}\n"
+        f"🔗 *Username:* {username}\n"
+        f"🆔 *User ID:* `{user_id}`\n\n"
+        f"📝 *Message:*\n{message.text}"
+    )
+
+    try:
+        bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+        bot.reply_to(message, "✅ Aapka message admin ko bhej diya gaya hai. Jald hi aapko reply milega!")
+    except Exception as e:
+        print(f"Error forwarding message to admin: {e}")
+        bot.reply_to(message, "❌ Message send karne mein error aayi. Kripya baad mein try karein.")
+
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message)
+def handle_admin_reply_to_user(message):
+    reply_text = message.reply_to_message.text
+    if not reply_text or "NEW MESSAGE FROM USER" not in reply_text:
+        return  # Agar admin kisi aur message par reply kar raha hai jo user query nahi hai
+
+    match = re.search(r"🆔 \*User ID:\* `(\d+)`", reply_text)
+    if match:
+        target_user_id = int(match.group(1))
+        admin_reply = message.text
+
+        try:
+            bot.send_message(
+                target_user_id,
+                f"💬 *Message from Admin:*\n\n{admin_reply}",
+                parse_mode="Markdown"
+            )
+            bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!")
+        except Exception as e:
+            bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}")
+    else:
+        bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
 
 
 # ============================================================
@@ -1014,7 +1067,7 @@ def submit_payment():
         try:
             bot.send_message(
                 ADMIN_ID,
-                f"⚠️ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
+                f"⚠️️ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
                 f"📦 *Plan:* {plan}\n"
                 f"💰 *Amount:* ₹{amount}\n"
                 f"💳 *UTR ID:* `{utr}`\n"
