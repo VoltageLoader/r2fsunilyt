@@ -597,7 +597,7 @@ def callback_del_main_menu_back(call):
     markup.add(
         types.InlineKeyboardButton("🗑️ Single Delete", callback_data="del_single_menu"),
         types.InlineKeyboardButton("🗑️ Delete Sold Keys", callback_data="del_sold_menu_main"),
-        types.InlineKeyboardButton("🗑️️ Delete All", callback_data="del_all_menu_main"),
+        types.InlineKeyboardButton("🗑 Delete All", callback_data="del_all_menu_main"),
     )
     bot.edit_message_text(
         "🗑️ *DELETE STOCK OPTIONS*\n\n"
@@ -619,7 +619,7 @@ def callback_del_sold_by_duration_menu(call):
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
-        markup.add(types.InlineKeyboardButton(f"🗑️ Sold {d}", callback_data=f"conf_del_sold_{cb_val}"))
+        markup.add(types.InlineKeyboardButton(f"🗑️️ Sold {d}", callback_data=f"conf_del_sold_{cb_val}"))
     
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_sold_menu_main"))
 
@@ -643,7 +643,7 @@ def callback_del_by_duration_menu(call):
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
-        markup.add(types.InlineKeyboardButton(f"🗑️️ {d}", callback_data=f"del_dur_prompt_{cb_val}"))
+        markup.add(types.InlineKeyboardButton(f"🗑 {d}", callback_data=f"del_dur_prompt_{cb_val}"))
     
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_all_menu_main"))
 
@@ -801,67 +801,31 @@ def handle_show_sold_key_direct(message):
 
 
 # ============================================================
-# ADMIN APPROVAL / REJECTION CALLBACK FOR PAYMENTS
+# ADMIN REVOKE / DELETE KEY FROM PAYMENT NOTIFICATION
 # ============================================================
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("approve_") or call.data.startswith("reject_"))
-def callback_payment_handling(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rev_key_"))
+def callback_revoke_key_from_payment(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
         return
 
-    data_str = call.data
-    parts = data_str.split("_")
-    action = parts[0]
+    try:
+        key_id = int(call.data.replace("rev_key_", ""))
+        result = keys_collection.delete_one({"id": key_id})
 
-    if action == "approve":
-        utr = parts[1]
-        plan = "_".join(parts[2:])
-
-        key_row = keys_collection.find_one(
-            {"duration": plan, "status": "unused"},
-            {"id": 1, "license_key": 1}
-        )
-
-        if not key_row:
-            bot.answer_callback_query(call.id, f"❌ Stock empty for {plan}!", show_alert=True)
-            bot.send_message(ADMIN_ID, f"⚠️ Stock khatam ho gaya hai '{plan}' ke liye! Pehle key add karein.")
-            return
-
-        key_id = key_row["id"]
-        assigned_key = keys_collection.find_one_and_update(
-            {"id": key_id, "status": "unused"},
-            {"$set": {"status": "used", "assigned_to": f"UTR: {utr}"}},
-            return_document=True
-        )
-
-        if assigned_key:
-            license_key = assigned_key["license_key"]
-            payments_collection.update_one(
-                {"utr": utr},
-                {"$set": {"status": "approved", "key": license_key}}
-            )
-            bot.answer_callback_query(call.id, f"Approved! Key: {license_key}")
-            bot.send_message(
-                ADMIN_ID,
-                f"✅ Payment Approved for UTR: `{utr}`\n🔑 Key Assigned: `{license_key}`",
+        if result.deleted_count > 0:
+            bot.answer_callback_query(call.id, "Key deleted successfully!", show_alert=True)
+            bot.edit_message_text(
+                call.message.text + "\n\n❌ *STATUS: Key has been deleted/revoked by Admin.*",
+                call.message.chat.id,
+                call.message.message_id,
                 parse_mode="Markdown"
             )
         else:
-            bot.answer_callback_query(call.id, "❌ Key pehle hi assign ho chuki hai!", show_alert=True)
-
-    elif action == "reject":
-        utr = parts[1]
-        payments_collection.update_one(
-            {"utr": utr},
-            {"$set": {"status": "rejected"}}
-        )
-        bot.answer_callback_query(call.id, "Payment Rejected.")
-        bot.send_message(
-            ADMIN_ID,
-            f"❌ Payment Rejected for UTR: `{utr}`",
-            parse_mode="Markdown"
-        )
+            bot.answer_callback_query(call.id, "❌ Key already deleted or not found.", show_alert=True)
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {e}", show_alert=True)
 
 
 # ============================================================
@@ -1017,7 +981,7 @@ def submit_free_task():
     return jsonify({"status": "success", "key": license_key})
 
 
-# --- 2. Payment Submission API ---
+# --- 2. Payment Submission & Auto-Approval API ---
 @app.route('/api/submit_payment', methods=['POST'])
 def submit_payment():
     data = request.json or {}
@@ -1028,24 +992,85 @@ def submit_payment():
     if not utr or not plan:
         return jsonify({"error": "Invalid data, UTR and Plan required"}), 400
 
+    # Check if payment already approved
+    existing_payment = payments_collection.find_one({"utr": utr})
+    if existing_payment and existing_payment.get("status") == "approved":
+        return jsonify({
+            "status": "success",
+            "message": "Payment already processed",
+            "key": existing_payment.get("key", "")
+        })
+
+    # Find unused key for the selected plan
+    key_row = keys_collection.find_one(
+        {"duration": plan, "status": "unused"},
+        {"id": 1, "license_key": 1}
+    )
+
+    if not key_row:
+        payments_collection.update_one(
+            {"utr": utr},
+            {"$set": {"status": "out_of_stock", "plan": plan, "amount": amount, "key": ""}},
+            upsert=True
+        )
+        try:
+            bot.send_message(
+                ADMIN_ID,
+                f"⚠️ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
+                f"📦 *Plan:* {plan}\n"
+                f"💰 *Amount:* ₹{amount}\n"
+                f"💳 *UTR ID:* `{utr}`\n"
+                f"❌ Stock khatam ho gaya hai! Kripya key add karein.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": "Stock empty for this plan"}), 400
+
+    key_id = key_row["id"]
+    license_key = key_row["license_key"]
+    buy_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    # Auto assign key
+    assigned_key = keys_collection.find_one_and_update(
+        {"id": key_id, "status": "unused"},
+        {"$set": {"status": "used", "assigned_to": f"UTR: {utr}"}},
+        return_document=True
+    )
+
+    if not assigned_key:
+        return jsonify({"status": "error", "message": "Key assignment failed, please try again."}), 400
+
+    # Save payment as approved with details
     payments_collection.update_one(
         {"utr": utr},
-        {"$set": {"status": "pending", "plan": plan, "amount": amount, "key": ""}},
+        {
+            "$set": {
+                "status": "approved",
+                "plan": plan,
+                "amount": amount,
+                "key": license_key,
+                "key_id": key_id,
+                "buy_time": buy_time
+            }
+        },
         upsert=True
     )
 
+    # Send Notification to Admin with Delete/Revoke Option
     msg = (
-        f"🚨 *NEW PAYMENT RECEIVED!*\n\n"
-        f"📦 *Plan:* {plan}\n"
-        f"💰 *Amount:* ₹{amount}\n"
-        f"💳 *UTR ID:* `{utr}`\n\n"
-        f"Niche diye gaye button par click karke verify karein:"
+        f"✅ *AUTO-APPROVED PAYMENT & KEY GIVEN!*\n\n"
+        f"📦 *Plan / Duration:* {plan}\n"
+        f"💰 *Price / Amount:* ₹{amount}\n"
+        f"💳 *UTR ID:* `{utr}`\n"
+        f"🕒 *Buy Time:* {buy_time}\n"
+        f"🔑 *Assigned Key:* `{license_key}`\n\n"
+        f"Admin Actions:"
     )
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("✅ Approve & Send Key", callback_data=f"approve_{utr}_{plan}"),
-        types.InlineKeyboardButton("❌ Reject", callback_data=f"reject_{utr}")
+        types.InlineKeyboardButton("🗑️ Delete/Revoke This Key", callback_data=f"rev_key_{key_id}")
     )
 
     try:
@@ -1053,7 +1078,7 @@ def submit_payment():
     except Exception as e:
         print("Telegram send error:", e)
 
-    return jsonify({"status": "submitted"})
+    return jsonify({"status": "success", "key": license_key})
 
 
 # --- 3. Check Status API (Polled by App) ---
