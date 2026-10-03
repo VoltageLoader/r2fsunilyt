@@ -49,6 +49,7 @@ try:
     counters_collection = db["counters"]
     payments_collection = db["payments_table"]
     device_cooldowns_collection = db["device_cooldowns"]
+    chats_collection = db["chats"]  # Added for App Chat Support
 
     keys_collection.create_index(
         [("license_key", ASCENDING)],
@@ -74,7 +75,12 @@ try:
         unique=True
     )
 
-    print("MongoDB connected successfully!")
+    chats_collection.create_index(
+        [("device_id", ASCENDING), ("timestamp", ASCENDING)],
+        name="device_chat_timestamp"
+    )
+
+    print("MongoDB connected successfully with Chat Support!")
 
 except Exception as e:
     raise RuntimeError(f"MongoDB connection failed: {e}")
@@ -122,7 +128,7 @@ def get_main_reply_keyboard():
     )
 
     markup.add(
-        types.KeyboardButton("🗑️ DELETE KEY"),
+        types.KeyboardButton("🗑️️ DELETE KEY"),
         types.KeyboardButton("📋 SHOW SOLD KEY")
     )
 
@@ -299,25 +305,46 @@ def handle_user_messages(message):
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message)
 def handle_admin_reply_to_user(message):
     reply_text = message.reply_to_message.text
-    if not reply_text or "NEW MESSAGE FROM USER" not in reply_text:
-        return  # Agar admin kisi aur message par reply kar raha hai jo user query nahi hai
+    if not reply_text:
+        return
 
-    match = re.search(r"🆔 \*User ID:\* `(\d+)`", reply_text)
-    if match:
-        target_user_id = int(match.group(1))
-        admin_reply = message.text
+    if "NEW MESSAGE FROM USER" in reply_text:
+        match = re.search(r"🆔 \*User ID:\* `(\d+)`", reply_text)
+        if match:
+            target_user_id = int(match.group(1))
+            admin_reply = message.text
 
-        try:
-            bot.send_message(
-                target_user_id,
-                f"💬 *Message from Admin:*\n\n{admin_reply}",
-                parse_mode="Markdown"
-            )
-            bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!")
-        except Exception as e:
-            bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}")
-    else:
-        bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
+            try:
+                bot.send_message(
+                    target_user_id,
+                    f"💬 *Message from Admin:*\n\n{admin_reply}",
+                    parse_mode="Markdown"
+                )
+                bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!")
+            except Exception as e:
+                bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}")
+        else:
+            bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.")
+
+    elif "NEW CHAT FROM APP" in reply_text:
+        match = re.search(r"🆔 \*Device ID:\* `([^`]+)`", reply_text)
+        if match:
+            device_id = match.group(1)
+            admin_reply = message.text
+
+            chats_collection.insert_one({
+                "device_id": device_id,
+                "sender": "admin",
+                "message": admin_reply,
+                "timestamp": time.time()
+            })
+
+            try:
+                bot.reply_to(message, "✅ App chat reply successfully bhej diya gaya hai!")
+            except Exception as e:
+                bot.reply_to(message, f"❌ Error: {e}")
+        else:
+            bot.reply_to(message, "❌ Is message se Device ID detect nahi ho payi.")
 
 
 # ============================================================
@@ -982,7 +1009,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB!"
+    return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB & CHAT SUPPORT!"
 
 
 # --- 1. Free Key API (1 Device = 5 Ghante mein 1 Baar) ---
@@ -1067,7 +1094,7 @@ def submit_payment():
         try:
             bot.send_message(
                 ADMIN_ID,
-                f"⚠️️ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
+                f"⚠ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
                 f"📦 *Plan:* {plan}\n"
                 f"💰 *Amount:* ₹{amount}\n"
                 f"💳 *UTR ID:* `{utr}`\n"
@@ -1142,6 +1169,49 @@ def check_status(utr):
     })
 
 
+# --- 4. App Chat Send API (From Android App to Admin Telegram Bot) ---
+@app.route('/api/send_chat', methods=['POST'])
+def send_chat():
+    data = request.json or {}
+    device_id = data.get("device_id")
+    sender = data.get("sender", "user")
+    message = data.get("message")
+
+    if not device_id or not message:
+        return jsonify({"error": "device_id and message required"}), 400
+
+    chat_doc = {
+        "device_id": device_id,
+        "sender": sender,
+        "message": message,
+        "timestamp": time.time()
+    }
+    chats_collection.insert_one(chat_doc)
+
+    if sender == "user":
+        admin_msg = (
+            f"💬 *NEW CHAT FROM APP*\n\n"
+            f"🆔 *Device ID:* `{device_id}`\n\n"
+            f"📝 *Message:*\n{message}"
+        )
+        try:
+            bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+        except Exception as e:
+            print("Error sending chat to admin:", e)
+
+    return jsonify({"status": "success"})
+
+
+# --- 5. App Chat Get API (Polling from Android App) ---
+@app.route('/api/get_chat/<device_id>', methods=['GET'])
+def get_chat(device_id):
+    messages = list(
+        chats_collection.find({"device_id": device_id}, {"_id": 0})
+        .sort("timestamp", ASCENDING)
+    )
+    return jsonify(messages)
+
+
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
@@ -1165,7 +1235,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Webhook cleanup error: {e}")
 
-    print("Bot and Flask API Server are running with MongoDB...")
+    print("Bot and Flask API Server are running with MongoDB and Live Chat Support...")
 
     bot.infinity_polling(
         timeout=60,
