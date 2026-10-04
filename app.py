@@ -180,7 +180,7 @@ user_states = {}
 
 
 # ============================================================
-# KEYBOARDS
+# KEYBOARDS (UPDATED WITH LIVE CHAT)
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -202,6 +202,10 @@ def get_main_reply_keyboard():
     markup.add(
         types.KeyboardButton("🗑️ DELETE KEY"),
         types.KeyboardButton("📋 SHOW SOLD KEY")
+    )
+
+    markup.add(
+        types.KeyboardButton("💬 LIVE CHAT")
     )
 
     return markup
@@ -232,7 +236,8 @@ def setup_bot_commands():
         types.BotCommand("addsingle", "Add Single Key Shortcut"),
         types.BotCommand("addbulk", "Add Bulk Keys Shortcut"),
         types.BotCommand("delete", "Delete Key Options"),
-        types.BotCommand("sold", "View Sold Keys")
+        types.BotCommand("sold", "View Sold Keys"),
+        types.BotCommand("livechat", "View Active Live Chats")
     ]
 
     try:
@@ -253,7 +258,8 @@ def setup_bot_commands():
         "addsingle",
         "addbulk",
         "delete",
-        "sold"
+        "sold",
+        "livechat"
     ]
 )
 def handle_commands(message):
@@ -306,6 +312,9 @@ def handle_commands(message):
     elif cmd == "/sold":
         handle_show_sold_key_direct(message)
 
+    elif cmd == "/livechat":
+        handle_live_chat_menu_direct(message)
+
 
 # ============================================================
 # BACK BUTTON
@@ -352,7 +361,7 @@ def handle_back_button(message):
 
 
 # ============================================================
-# BOTTOM MENU
+# BOTTOM MENU LISTENERS
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
@@ -383,6 +392,75 @@ def handle_del_key_msg(message):
 @bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
 def handle_sold_key_msg(message):
     handle_show_sold_key_direct(message)
+
+
+@bot.message_handler(func=lambda message: message.text == "💬 LIVE CHAT")
+def handle_live_chat_msg(message):
+    handle_live_chat_menu_direct(message)
+
+
+# ============================================================
+# LIVE CHAT MENU DISPLAY
+# ============================================================
+
+def handle_live_chat_menu_direct(message):
+    user_id = message.from_user.id
+
+    if user_id != ADMIN_ID:
+        return
+
+    pipeline = [
+        {"$sort": {"timestamp": -1}},
+        {
+            "$group": {
+                "_id": "$device_id",
+                "last_message": {"$first": "$message"},
+                "sender": {"$first": "$sender"},
+                "timestamp": {"$first": "$timestamp"}
+            }
+        },
+        {"$sort": {"timestamp": -1}},
+        {"$limit": 15}
+    ]
+
+    try:
+        active_devices = list(chats_collection.aggregate(pipeline))
+    except Exception:
+        active_devices = []
+
+    if not active_devices:
+        sent_msg = bot.send_message(
+            message.chat.id,
+            "💬 *LIVE CHAT*\n\n❌ Abhi tak koi active chat available nahi hai.",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+        user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+        return
+
+    text = "💬 *ACTIVE LIVE CHATS (Recent Devices):*\n\n"
+    for dev in active_devices:
+        device_id = dev["_id"]
+        last_msg = dev.get("last_message", "")
+        sender = dev.get("sender", "user")
+        text += (
+            f"📱 Device: `{device_id}`\n"
+            f"👤 Last Sender: `{sender}`\n"
+            f"📝 Msg: {last_msg}\n\n"
+        )
+
+    text += "*(Kisi bhi chat message ya notification par **Reply** karke seedha baat karein)*"
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard()
+    )
+
+    user_states[user_id] = {
+        "response_msg_id": sent_msg.message_id
+    }
 
 
 # ============================================================
@@ -500,6 +578,7 @@ def handle_admin_reply_to_user(message):
     elif (
         "NEW CHAT FROM APP" in reply_text
         or "Media from Device" in reply_text
+        or "ACTIVE LIVE CHATS" in reply_text
     ):
 
         match = (
@@ -1055,7 +1134,7 @@ def callback_delete_submenus(call):
         )
 
         bot.edit_message_text(
-            "🗑️ *DELETE SOLD KEYS OPTIONS*\n\n"
+            "🗑️️ *DELETE SOLD KEYS OPTIONS*\n\n"
             "Aap kis tarah ki sold keys delete karna chahte hain select karein:",
             call.message.chat.id,
             call.message.message_id,
@@ -1120,7 +1199,7 @@ def callback_del_main_menu_back(call):
             callback_data="del_sold_menu_main"
         ),
         types.InlineKeyboardButton(
-            "🗑️ Delete All",
+            "🗑 Delete All",
             callback_data="del_all_menu_main"
         ),
     )
@@ -1593,6 +1672,7 @@ def handle_user_state_input(message):
         "📦 ADD BULK",
         "🗑️ DELETE KEY",
         "📋 SHOW SOLD KEY",
+        "💬 LIVE CHAT",
         "🔚 BACK"
     ]:
         return
@@ -1967,7 +2047,6 @@ def submit_payment():
             "message": "Invalid subscription plan."
         }), 400
 
-    # 1. Check if UTR already processed
     existing_payment = payments_collection.find_one({"utr": utr})
     if existing_payment:
         return jsonify({
@@ -1976,7 +2055,6 @@ def submit_payment():
             "key": existing_payment.get("key", "")
         })
 
-    # 2. Find an unused key for auto-approval
     key_row = keys_collection.find_one(
         {
             "duration": plan,
@@ -1997,7 +2075,6 @@ def submit_payment():
     key_id = key_row["id"]
     license_key = key_row["license_key"]
 
-    # 3. Atomic Key Assignment (Mark as used)
     assigned_key = keys_collection.find_one_and_update(
         {
             "id": key_id,
@@ -2039,7 +2116,6 @@ def submit_payment():
     try:
         payments_collection.insert_one(payment_doc)
     except DuplicateKeyError:
-        # Rollback key if duplicate insertion error occurs
         keys_collection.update_one(
             {"id": key_id},
             {"$set": {"status": "unused", "assigned_to": None}}
@@ -2050,7 +2126,6 @@ def submit_payment():
             "key": existing.get("key", "")
         })
 
-    # 4. Send Auto-Confirmation Notification to Admin Telegram Bot
     try:
         admin_msg = (
             "🤖 *AUTOMATIC PAYMENT CONFIRMED*\n\n"
@@ -2454,7 +2529,6 @@ if __name__ == "__main__":
             drop_pending_updates=True
         )
 
-    valid = True
     except Exception as e:
 
         print(
