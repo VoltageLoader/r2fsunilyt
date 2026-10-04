@@ -117,7 +117,7 @@ try:
 
     print(
         "MongoDB connected successfully with "
-        "Real-Time Chat, Media & Payment Approval Support!"
+        "Real-Time Chat, Media & Auto-Payment Approval Support!"
     )
 
 except Exception as e:
@@ -1488,517 +1488,6 @@ def handle_show_sold_key_direct(message):
 
 
 # ============================================================
-# PAYMENT ADMIN KEYBOARD
-# ============================================================
-
-def payment_admin_keyboard(payment_id, key_id=None):
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-
-    markup.add(
-        types.InlineKeyboardButton(
-            "✅ APPROVE PAYMENT",
-            callback_data=f"pay_approve_{payment_id}"
-        ),
-        types.InlineKeyboardButton(
-            "❌ REJECT PAYMENT",
-            callback_data=f"pay_reject_{payment_id}"
-        )
-    )
-
-    if key_id is not None:
-
-        markup.add(
-            types.InlineKeyboardButton(
-                "🗑️ DELETE / REVOKE KEY",
-                callback_data=f"rev_key_{key_id}"
-            )
-        )
-
-    return markup
-
-
-# ============================================================
-# PAYMENT ADMIN NOTIFICATION
-# ============================================================
-
-def send_payment_pending_notification(payment):
-
-    payment_id = payment.get("payment_id")
-    plan = payment.get("plan", "")
-    amount = payment.get("amount", "")
-    utr = payment.get("utr", "")
-    buy_time = payment.get("buy_time", "")
-    device_id = payment.get("device_id", "")
-    device_model = payment.get("device_model", "")
-
-    message = (
-        "💳 PAYMENT VERIFICATION REQUIRED\n\n"
-        f"🆔 Payment ID: {payment_id}\n"
-        f"📦 Plan: {plan}\n"
-        f"💰 Amount: ₹{amount}\n"
-        f"💳 UTR / Transaction Ref: {utr}\n"
-        f"🕒 Buy Time: {buy_time}\n"
-        f"📱 Device ID: {device_id or 'Not provided'}\n"
-        f"📱 Device: {device_model or 'Not provided'}\n\n"
-        "⚠️ Status: PENDING\n"
-        "Payment ko verify karke APPROVE ya REJECT karein."
-    )
-
-    return bot.send_message(
-        ADMIN_ID,
-        message,
-        reply_markup=payment_admin_keyboard(payment_id)
-    )
-
-
-# ============================================================
-# PAYMENT APPROVE
-# ============================================================
-
-@bot.callback_query_handler(
-    func=lambda call:
-        call.data.startswith("pay_approve_")
-)
-def callback_approve_payment(call):
-
-    if call.from_user.id != ADMIN_ID:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Unauthorized!",
-            show_alert=True
-        )
-
-        return
-
-    try:
-
-        payment_id = int(
-            call.data.replace(
-                "pay_approve_",
-                ""
-            )
-        )
-
-    except Exception:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Invalid payment ID.",
-            show_alert=True
-        )
-
-        return
-
-    payment = payments_collection.find_one({
-        "payment_id": payment_id
-    })
-
-    if not payment:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Payment record not found.",
-            show_alert=True
-        )
-
-        return
-
-    status = payment.get(
-        "status",
-        "pending"
-    )
-
-    if status == "approved":
-
-        bot.answer_callback_query(
-            call.id,
-            "Already approved.",
-            show_alert=True
-        )
-
-        return
-
-    if status == "rejected":
-
-        bot.answer_callback_query(
-            call.id,
-            "This payment was already rejected.",
-            show_alert=True
-        )
-
-        return
-
-    if status != "pending":
-
-        bot.answer_callback_query(
-            call.id,
-            f"Payment status: {status}",
-            show_alert=True
-        )
-
-        return
-
-    plan = normalize_plan(
-        payment.get("plan")
-    )
-
-    if not plan:
-
-        payments_collection.update_one(
-            {"payment_id": payment_id},
-            {
-                "$set": {
-                    "status": "rejected",
-                    "reject_reason": "Invalid plan"
-                }
-            }
-        )
-
-        bot.answer_callback_query(
-            call.id,
-            "Invalid plan.",
-            show_alert=True
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # FIND UNUSED KEY
-    # --------------------------------------------------------
-
-    key_row = keys_collection.find_one(
-        {
-            "duration": plan,
-            "status": "unused"
-        },
-        {
-            "id": 1,
-            "license_key": 1
-        }
-    )
-
-    if not key_row:
-
-        payments_collection.update_one(
-            {"payment_id": payment_id},
-            {
-                "$set": {
-                    "status": "out_of_stock",
-                    "plan": plan
-                }
-            }
-        )
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Stock empty for this plan.",
-            show_alert=True
-        )
-
-        try:
-
-            bot.edit_message_text(
-                call.message.text
-                + "\n\n"
-                "❌ STATUS: OUT OF STOCK\n"
-                "Payment approve nahi hua. Pehle stock add karein.",
-                call.message.chat.id,
-                call.message.message_id
-            )
-
-        except Exception:
-            pass
-
-        return
-
-    key_id = key_row["id"]
-    license_key = key_row["license_key"]
-
-    # --------------------------------------------------------
-    # ATOMIC KEY ASSIGNMENT
-    # --------------------------------------------------------
-
-    assigned_key = keys_collection.find_one_and_update(
-        {
-            "id": key_id,
-            "status": "unused"
-        },
-        {
-            "$set": {
-                "status": "used",
-                "assigned_to": (
-                    f"Payment ID: {payment_id} | "
-                    f"UTR: {payment.get('utr', '')}"
-                )
-            }
-        },
-        return_document=True
-    )
-
-    if not assigned_key:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Key assignment race occurred. Try again.",
-            show_alert=True
-        )
-
-        return
-
-    buy_time = payment.get(
-        "buy_time",
-        time.strftime(
-            "%Y-%m-%d %H:%M:%S",
-            time.localtime()
-        )
-    )
-
-    # --------------------------------------------------------
-    # UPDATE PAYMENT
-    # --------------------------------------------------------
-
-    updated = payments_collection.update_one(
-        {
-            "payment_id": payment_id,
-            "status": "pending"
-        },
-        {
-            "$set": {
-                "status": "approved",
-                "plan": plan,
-                "key": license_key,
-                "key_id": key_id,
-                "approved_at": time.strftime(
-                    "%Y-%m-%d %H:%M:%S",
-                    time.localtime()
-                )
-            }
-        }
-    )
-
-    if updated.modified_count == 0:
-
-        # Safety rollback if payment changed
-        keys_collection.update_one(
-            {
-                "id": key_id,
-                "license_key": license_key,
-                "status": "used",
-                "assigned_to": (
-                    f"Payment ID: {payment_id} | "
-                    f"UTR: {payment.get('utr', '')}"
-                )
-            },
-            {
-                "$set": {
-                    "status": "unused",
-                    "assigned_to": None
-                }
-            }
-        )
-
-        bot.answer_callback_query(
-            call.id,
-            "Payment state changed. No key released.",
-            show_alert=True
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # ADMIN MESSAGE
-    # --------------------------------------------------------
-
-    approved_message = (
-        "✅ PAYMENT APPROVED\n\n"
-        f"🆔 Payment ID: {payment_id}\n"
-        f"📦 Plan / Duration: {plan}\n"
-        f"💰 Amount: ₹{payment.get('amount', '')}\n"
-        f"💳 UTR: {payment.get('utr', '')}\n"
-        f"🕒 Buy Time: {buy_time}\n"
-        f"📱 Device ID: {payment.get('device_id', '') or 'Not provided'}\n"
-        f"📱 Device: {payment.get('device_model', '') or 'Not provided'}\n\n"
-        f"🔑 Assigned Key:\n{license_key}\n\n"
-        "🟢 Status: APPROVED"
-    )
-
-    try:
-
-        bot.edit_message_text(
-            approved_message,
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=payment_admin_keyboard(
-                payment_id,
-                key_id
-            )
-        )
-
-    except Exception as e:
-
-        print(
-            "Payment admin edit error:",
-            e
-        )
-
-        try:
-
-            bot.send_message(
-                ADMIN_ID,
-                approved_message,
-                reply_markup=payment_admin_keyboard(
-                    payment_id,
-                    key_id
-                )
-            )
-
-        except Exception:
-            pass
-
-    bot.answer_callback_query(
-        call.id,
-        "✅ Payment approved & key assigned!",
-        show_alert=True
-    )
-
-
-# ============================================================
-# PAYMENT REJECT
-# ============================================================
-
-@bot.callback_query_handler(
-    func=lambda call:
-        call.data.startswith("pay_reject_")
-)
-def callback_reject_payment(call):
-
-    if call.from_user.id != ADMIN_ID:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Unauthorized!",
-            show_alert=True
-        )
-
-        return
-
-    try:
-
-        payment_id = int(
-            call.data.replace(
-                "pay_reject_",
-                ""
-            )
-        )
-
-    except Exception:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Invalid payment ID.",
-            show_alert=True
-        )
-
-        return
-
-    payment = payments_collection.find_one({
-        "payment_id": payment_id
-    })
-
-    if not payment:
-
-        bot.answer_callback_query(
-            call.id,
-            "❌ Payment not found.",
-            show_alert=True
-        )
-
-        return
-
-    status = payment.get(
-        "status",
-        "pending"
-    )
-
-    if status == "approved":
-
-        bot.answer_callback_query(
-            call.id,
-            "Already approved. Cannot reject now.",
-            show_alert=True
-        )
-
-        return
-
-    if status == "rejected":
-
-        bot.answer_callback_query(
-            call.id,
-            "Already rejected.",
-            show_alert=True
-        )
-
-        return
-
-    result = payments_collection.update_one(
-        {
-            "payment_id": payment_id,
-            "status": "pending"
-        },
-        {
-            "$set": {
-                "status": "rejected",
-                "rejected_at": time.strftime(
-                    "%Y-%m-%d %H:%M:%S",
-                    time.localtime()
-                )
-            }
-        }
-    )
-
-    if result.modified_count == 0:
-
-        bot.answer_callback_query(
-            call.id,
-            "Payment state changed.",
-            show_alert=True
-        )
-
-        return
-
-    rejected_message = (
-        "❌ PAYMENT REJECTED\n\n"
-        f"🆔 Payment ID: {payment_id}\n"
-        f"📦 Plan: {payment.get('plan', '')}\n"
-        f"💰 Amount: ₹{payment.get('amount', '')}\n"
-        f"💳 UTR: {payment.get('utr', '')}\n"
-        f"🕒 Buy Time: {payment.get('buy_time', '')}\n"
-        f"📱 Device ID: {payment.get('device_id', '') or 'Not provided'}\n\n"
-        "🔴 Status: REJECTED\n"
-        "🔑 No key was assigned."
-    )
-
-    try:
-
-        bot.edit_message_text(
-            rejected_message,
-            call.message.chat.id,
-            call.message.message_id
-        )
-
-    except Exception:
-        pass
-
-    bot.answer_callback_query(
-        call.id,
-        "❌ Payment rejected.",
-        show_alert=True
-    )
-
-
-# ============================================================
 # REVOKE KEY
 # ============================================================
 
@@ -2280,7 +1769,7 @@ def home():
 
     return (
         "BOT & API SERVER IS ACTIVE AND RUNNING "
-        "WITH MONGODB, PAYMENT APPROVAL & REAL-TIME CHAT SUPPORT!"
+        "WITH MONGODB, AUTO-PAYMENT APPROVAL & REAL-TIME CHAT SUPPORT!"
     )
 
 
@@ -2426,7 +1915,7 @@ def submit_free_task():
 
 
 # ============================================================
-# PAYMENT SUBMIT
+# PAYMENT SUBMIT & AUTO-APPROVAL API
 # ============================================================
 
 @app.route(
@@ -2478,143 +1967,116 @@ def submit_payment():
             "message": "Invalid subscription plan."
         }), 400
 
-    # --------------------------------------------------------
-    # DUPLICATE UTR
-    # --------------------------------------------------------
-
-    existing_payment = payments_collection.find_one({
-        "utr": utr
-    })
-
+    # 1. Check if UTR already processed
+    existing_payment = payments_collection.find_one({"utr": utr})
     if existing_payment:
-
-        existing_status = existing_payment.get(
-            "status",
-            "pending"
-        )
-
-        if existing_status == "approved":
-
-            return jsonify({
-                "status": "approved",
-                "message": "Payment already approved",
-                "key": existing_payment.get(
-                    "key",
-                    ""
-                )
-            })
-
         return jsonify({
-            "status": existing_status,
-            "message": (
-                "This UTR is already submitted. "
-                "Waiting for Admin approval."
-            ),
-            "key": existing_payment.get(
-                "key",
-                ""
-            )
+            "status": existing_payment.get("status", "approved"),
+            "message": "Payment already processed",
+            "key": existing_payment.get("key", "")
         })
 
-
-    # --------------------------------------------------------
-    # CREATE PENDING PAYMENT
-    # --------------------------------------------------------
-
-    payment_id = get_next_id(
-        "payment_id"
+    # 2. Find an unused key for auto-approval
+    key_row = keys_collection.find_one(
+        {
+            "duration": plan,
+            "status": "unused"
+        },
+        {
+            "id": 1,
+            "license_key": 1
+        }
     )
 
-    buy_time = time.strftime(
-        "%Y-%m-%d %H:%M:%S",
-        time.localtime()
+    if not key_row:
+        return jsonify({
+            "status": "error",
+            "message": "❌ Stock empty for this plan. Please contact admin."
+        }), 400
+
+    key_id = key_row["id"]
+    license_key = key_row["license_key"]
+
+    # 3. Atomic Key Assignment (Mark as used)
+    assigned_key = keys_collection.find_one_and_update(
+        {
+            "id": key_id,
+            "status": "unused"
+        },
+        {
+            "$set": {
+                "status": "used",
+                "assigned_to": f"Auto Payment | UTR: {utr}"
+            }
+        },
+        return_document=True
     )
+
+    if not assigned_key:
+        return jsonify({
+            "status": "error",
+            "message": "❌ Key assignment failed, please try again."
+        }), 400
+
+    payment_id = get_next_id("payment_id")
+    buy_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
     payment_doc = {
         "payment_id": payment_id,
         "utr": utr,
         "plan": plan,
         "amount": amount,
-        "status": "pending",
-        "key": "",
-        "key_id": None,
+        "status": "approved",
+        "key": license_key,
+        "key_id": key_id,
         "device_id": device_id,
         "device_model": device_model,
         "buy_time": buy_time,
+        "approved_at": buy_time,
         "created_at": time.time()
     }
 
     try:
-
-        payments_collection.insert_one(
-            payment_doc
-        )
-
+        payments_collection.insert_one(payment_doc)
     except DuplicateKeyError:
-
-        existing_payment = (
-            payments_collection.find_one({
-                "utr": utr
-            })
+        # Rollback key if duplicate insertion error occurs
+        keys_collection.update_one(
+            {"id": key_id},
+            {"$set": {"status": "unused", "assigned_to": None}}
         )
-
-        if existing_payment:
-
-            return jsonify({
-                "status": existing_payment.get(
-                    "status",
-                    "pending"
-                ),
-                "message": (
-                    "This UTR is already submitted."
-                ),
-                "key": existing_payment.get(
-                    "key",
-                    ""
-                )
-            })
-
+        existing = payments_collection.find_one({"utr": utr})
         return jsonify({
-            "status": "error",
-            "message": "Duplicate payment request."
-        }), 409
+            "status": existing.get("status", "approved"),
+            "key": existing.get("key", "")
+        })
 
-    # --------------------------------------------------------
-    # ADMIN NOTIFICATION
-    # --------------------------------------------------------
-
+    # 4. Send Auto-Confirmation Notification to Admin Telegram Bot
     try:
-
-        payment_message = send_payment_pending_notification(
-            payment_doc
+        admin_msg = (
+            "🤖 *AUTOMATIC PAYMENT CONFIRMED*\n\n"
+            f"🆔 *Payment ID:* `{payment_id}`\n"
+            f"📦 *Plan:* `{plan}`\n"
+            f"💰 *Amount:* `₹{amount}`\n"
+            f"💳 *UTR:* `{utr}`\n"
+            f"🕒 *Time:* `{buy_time}`\n"
+            f"📱 *Device ID:* `{device_id or 'N/A'}`\n"
+            f"📱 *Device Model:* `{device_model or 'N/A'}`\n\n"
+            f"🔑 *Assigned Key:*\n`{license_key}`\n\n"
+            "🟢 Status: *AUTO APPROVED & KEY ISSUED*"
         )
-
-        payments_collection.update_one(
-            {
-                "payment_id": payment_id
-            },
-            {
-                "$set": {
-                    "admin_message_id":
-                        payment_message.message_id
-                }
-            }
+        bot.send_message(
+            ADMIN_ID,
+            admin_msg,
+            parse_mode="Markdown"
         )
-
     except Exception as e:
-
-        print(
-            "Payment admin notification error:",
-            e
-        )
+        print("Payment admin notification error:", e)
 
     return jsonify({
-        "status": "pending",
+        "status": "approved",
         "payment_id": payment_id,
-        "message": (
-            "Payment request received. "
-            "Waiting for Admin approval."
-        )
+        "key": license_key,
+        "message": "Payment verified and key issued automatically!"
     })
 
 
@@ -2992,6 +2454,7 @@ if __name__ == "__main__":
             drop_pending_updates=True
         )
 
+    valid = True
     except Exception as e:
 
         print(
@@ -3000,7 +2463,7 @@ if __name__ == "__main__":
 
     print(
         "Bot and Flask API Server are running "
-        "with MongoDB, Payment Approval, "
+        "with MongoDB, Auto-Payment Approval, "
         "SSE Streaming & Live Chat Support..."
     )
 
