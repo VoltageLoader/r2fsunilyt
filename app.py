@@ -41,7 +41,7 @@ def api_launch_attack():
         if duration > 300:
             return jsonify({"status": "error", "message": "Time interval must be less than or equal to 300 seconds."}), 400
 
-        # Execute Attack in Background Thread (Open Access for Everyone)
+        # Execute Attack in Background Thread
         threading.Thread(
             target=execute_api_attack_bg, 
             args=(target, port, duration), 
