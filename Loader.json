@@ -1,8 +1,7 @@
 {
   "version": "4.0",
+  "lib_version": 2,
   "url": "https://t.me/",
-  "bgmi_v1": true,
-  "bgmi_v1_msg": "Brutal Menu is currently offline.",
-  "bgmi_v2": true,
-  "bgmi_v2_msg": "SAFE ESP Menu is currently offline."
+  "music_url": "https://github.com/VoltageLoader/Voltage/raw/refs/heads/main/r2f.mp3",
+  "vip_url": "https://t.me/"
 }
