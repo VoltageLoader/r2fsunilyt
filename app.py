@@ -816,7 +816,7 @@ def handle_reply_menu(message):
 
 
 # ============================================================
-# SETUP CHANNEL CALLBACKS (SEND SAVED APK & JOIN CHANNEL BUTTON)
+# SETUP CHANNEL CALLBACKS (SEND SAVED APK & WATCH SETUP VIDEO BUTTON)
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setup_"))
@@ -829,7 +829,7 @@ def handle_setup_callbacks(call):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("📢 JOIN OFFICIAL CHANNEL", url=video_link)
+        types.InlineKeyboardButton("📺 WATCH SETUP VIDEO", url=video_link)
     )
 
     if loader_doc and "file_id" in loader_doc:
@@ -840,7 +840,7 @@ def handle_setup_callbacks(call):
                 document=file_id,
                 caption=(
                     f"📁 *HERE IS YOUR APK FOR {key.upper().replace('_', ' ')}* ✅\n\n"
-                    f"NICHE DIYE GAYE BUTTON SE OFFICIAL CHANNEL JOIN KAREIN:"
+                    f"NICHE DIYE GAYE BUTTON SE SETUP VIDEO DEHEIN:"
                 ),
                 parse_mode="Markdown",
                 reply_markup=markup
@@ -848,14 +848,14 @@ def handle_setup_callbacks(call):
         except Exception:
             bot.send_message(
                 call.message.chat.id,
-                f"❌ APK SEND KARNE MEIN ERROR AAYA. KRIPYA ADMIN SE DOBARA UPLOAD KARWAYEIN.\n\n📢 OFFICIAL CHANNEL LINK:",
+                f"❌ APK SEND KARNE MEIN ERROR AAYA. KRIPYA ADMIN SE DOBARA UPLOAD KARWAYEIN.\n\n📺 WATCH SETUP VIDEO LINK:",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
     else:
         bot.send_message(
             call.message.chat.id,
-            f"❌ *APK NOT AVAILABLE YET!*\nADMIN NE ABHI IS LOADER KE LIYE APK UPLOAD NAHI KIYA HAI.\n\n📢 OFFICIAL CHANNEL LINK:",
+            f"❌ *APK NOT AVAILABLE YET!*\nADMIN NE ABHI IS LOADER KE LIYE APK UPLOAD NAHI KIYA HAI.\n\n📺 WATCH SETUP VIDEO LINK:",
             parse_mode="Markdown",
             reply_markup=markup
         )
@@ -1319,4 +1319,10 @@ if __name__ == "__main__":
 
     try:
         bot.remove_webhook()
-        bot.delete_webhook(drop_
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print(f"WEBHOOK CLEANUP ERROR: {e}")
+
+    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
+
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
