@@ -814,7 +814,7 @@ def handle_reply_menu(message):
 
 
 # ============================================================
-# SETUP CHANNEL CALLBACKS (SEND SAVED APK & SETUP VIDEO BUTTON)
+# SETUP CHANNEL CALLBACKS (SEND SAVED APK & JOIN CHANNEL BUTTON)
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setup_"))
@@ -827,7 +827,7 @@ def handle_setup_callbacks(call):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("📺 WATCH SETUP VIDEO", url=video_link)
+        types.InlineKeyboardButton("📢 JOIN OFFICIAL CHANNEL", url=video_link)
     )
 
     if loader_doc and "file_id" in loader_doc:
@@ -836,21 +836,21 @@ def handle_setup_callbacks(call):
             bot.send_document(
                 call.message.chat.id,
                 document=file_id,
-                caption=f"📂 *HERE IS YOUR APK FOR {key.upper().replace('_', ' ')}*\n\nNICHE DIYE GAYE BUTTON SE SETUP VIDEO DEKHEIN:",
+                caption=f"📂 *HERE IS YOUR APK FOR {key.upper().replace('_', ' ')}*\n\nNICHE DIYE GAYE BUTTON SE OFFICIAL CHANNEL JOIN KAREIN:",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
         except Exception:
             bot.send_message(
                 call.message.chat.id,
-                f"❌ APK SEND KARNE MEIN ERROR AAYA. KRIPYA ADMIN SE DOBARA UPLOAD KARWAYEIN.\n\n📺 SETUP VIDEO LINK:",
+                f"❌ APK SEND KARNE MEIN ERROR AAYA. KRIPYA ADMIN SE DOBARA UPLOAD KARWAYEIN.\n\n📢 OFFICIAL CHANNEL LINK:",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
     else:
         bot.send_message(
             call.message.chat.id,
-            f"❌ *APK NOT AVAILABLE YET!*\nADMIN NE ABHI IS LOADER KE LIYE APK UPLOAD NAHI KIYA HAI.\n\n📺 SETUP VIDEO LINK:",
+            f"❌ *APK NOT AVAILABLE YET!*\nADMIN NE ABHI IS LOADER KE LIYE APK UPLOAD NAHI KIYA HAI.\n\n📢 OFFICIAL CHANNEL LINK:",
             parse_mode="Markdown",
             reply_markup=markup
         )
