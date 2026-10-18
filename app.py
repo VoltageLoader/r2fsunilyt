@@ -758,6 +758,13 @@ def handle_reply_menu(message):
             reply_markup=markup,
         )
 
+        bot.send_message(
+            message.chat.id,
+            "👇 *BACK:*",
+            parse_mode="Markdown",
+            reply_markup=get_back_reply_keyboard(),
+        )
+
     elif message.text == "🔐 MY KEYS":
         keys = list(keys_collection.find({"status": "used", "assigned_to": user_id}, {"id": 1, "duration": 1, "license_key": 1}).sort("id", DESCENDING))
         if not keys:
@@ -1312,10 +1319,4 @@ if __name__ == "__main__":
 
     try:
         bot.remove_webhook()
-        bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        print(f"WEBHOOK CLEANUP ERROR: {e}")
-
-    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
-
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        bot.delete_webhook(drop_
