@@ -758,12 +758,6 @@ def handle_reply_menu(message):
             reply_markup=markup,
         )
 
-        bot.send_message(
-            message.chat.id,
-            "👇 PICHE JAANE KE LIYE NICHE **🔚 BACK** DABAYEIN:",
-            reply_markup=get_back_reply_keyboard(),
-        )
-
     elif message.text == "🔐 MY KEYS":
         keys = list(keys_collection.find({"status": "used", "assigned_to": user_id}, {"id": 1, "duration": 1, "license_key": 1}).sort("id", DESCENDING))
         if not keys:
@@ -1289,4 +1283,39 @@ def handle_admin_reply(message):
         except Exception as e:
             bot.reply_to(message, f"❌ FAILED TO SEND REPLY: `{e}`", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "❌ TARGET USER ID
+        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_mode="Markdown")
+
+
+# ============================================================
+# FLASK SERVER
+# ============================================================
+
+app = Flask(__name__)
+
+
+@app.route("/")
+def home():
+    return "BOT IS ACTIVE AND RUNNING SMOOTHLY WITH MONGODB!"
+
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+
+# ============================================================
+# START BOT
+# ============================================================
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    try:
+        bot.remove_webhook()
+        bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print(f"WEBHOOK CLEANUP ERROR: {e}")
+
+    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
+
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
