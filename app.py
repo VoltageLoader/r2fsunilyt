@@ -100,11 +100,37 @@ def get_next_id(sequence_name):
 
 
 # ============================================================
-# USER STATE
+# USER STATE & TRACKING
 # ============================================================
 
 user_states = {}
 admin_reply_map = {}
+user_last_notif = {}  # Tracks last time user info header was sent to admin (24 hr limit)
+
+
+# ============================================================
+# HELPER: FORWARD MESSAGE TO ADMIN (ONCE PER 24 HR INFO HEADER)
+# ============================================================
+
+def forward_message_to_admin(message):
+    try:
+        user = message.from_user
+        user_id = user.id
+        current_time = time.time()
+
+        # Send info header only once every 24 hours (86400 seconds)
+        if user_id not in user_last_notif or (current_time - user_last_notif[user_id]) > 86400:
+            user_last_notif[user_id] = current_time
+            username = f"@{user.username}" if user.username else "NO USERNAME"
+            first_name = user.first_name if user.first_name else "USER"
+            info_text = f"📩 *NEW MESSAGE FROM USER* ✅\n👤 NAME: {first_name}\n🆔 USER ID: `{user_id}`\n🔗 USERNAME: {username}"
+            sent_info = bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
+            admin_reply_map[sent_info.message_id] = user_id
+
+        sent_forward = bot.forward_message(ADMIN_ID, message.chat.id, message.id)
+        admin_reply_map[sent_forward.message_id] = user_id
+    except Exception as e:
+        print(f"ERROR FORWARDING MESSAGE TO ADMIN: {e}")
 
 
 # ============================================================
@@ -355,6 +381,8 @@ def super_admin_panel(message):
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
+        types.InlineKeyboardButton("🖼️ UPLOAD STATIC UPI QR", callback_data="sa_upload_qr_menu"),
+        types.InlineKeyboardButton("🎨 GENERATE CUSTOM QR", callback_data="sa_custom_qr"),
         types.InlineKeyboardButton("➕ ADD LOADER (UPLOAD APK)", callback_data="sa_add_loader_menu"),
         types.InlineKeyboardButton("📺 ADD SETUP VIDEO LINK", callback_data="sa_add_video_menu"),
         types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data="sa_add_single"),
@@ -385,7 +413,25 @@ def super_admin_callbacks(call):
 
     data = call.data
 
-    if data == "sa_add_loader_menu":
+    if data == "sa_upload_qr_menu":
+        bot.answer_callback_query(call.id)
+        user_states[ADMIN_ID] = {"type": "waiting_upi_qr_photo"}
+        bot.send_message(
+            call.message.chat.id,
+            "🖼️ *UPLOAD STATIC UPI QR* ✅\n\n💬 APNA UPI QR CODE IMAGE (.jpg/.png) YAHAN CHAT MEIN SEND KAREIN:",
+            parse_mode="Markdown",
+        )
+
+    elif data == "sa_custom_qr":
+        bot.answer_callback_query(call.id)
+        user_states[ADMIN_ID] = {"type": "waiting_custom_qr_amount"}
+        bot.send_message(
+            call.message.chat.id,
+            "🎨 *GENERATE CUSTOM QR* ✅\n\n💬 AMOUNT ENTER KAREIN (JAISE: `99` YA `199`):",
+            parse_mode="Markdown",
+        )
+
+    elif data == "sa_add_loader_menu":
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
@@ -571,7 +617,7 @@ def super_admin_callbacks(call):
 
 
 # ============================================================
-# ADMIN STATE INPUT (KEYS, LOADER APK & VIDEO LINK)
+# ADMIN STATE INPUT
 # ============================================================
 
 @bot.message_handler(
@@ -579,13 +625,46 @@ def super_admin_callbacks(call):
         message.from_user.id == ADMIN_ID
         and message.from_user.id in user_states
         and user_states[message.from_user.id]["type"]
-        in ["waiting_single_key", "waiting_bulk_keys", "waiting_del_id", "waiting_bulk_del", "waiting_loader_apk", "waiting_loader_video"],
-    content_types=["text", "document"]
+        in ["waiting_single_key", "waiting_bulk_keys", "waiting_del_id", "waiting_bulk_del", "waiting_loader_apk", "waiting_loader_video", "waiting_upi_qr_photo", "waiting_custom_qr_amount"],
+    content_types=["text", "document", "photo"]
 )
 def handle_admin_state_input(message):
     user_id = message.from_user.id
     state = user_states[user_id]
     action_type = state["type"]
+
+    if action_type == "waiting_upi_qr_photo":
+        if not message.photo:
+            bot.reply_to(message, "❌ KRIPYA EK VALID QR IMAGE PHOTO SEND KAREIN!")
+            return
+        file_id = message.photo[-1].file_id
+        loaders_collection.update_one(
+            {"loader_key": "static_upi_qr"},
+            {"$set": {"file_id": file_id}},
+            upsert=True
+        )
+        del user_states[user_id]
+        bot.reply_to(message, "✅ *STATIC UPI QR SUCCESSFULLY SAVED!* ✅", parse_mode="Markdown")
+        return
+
+    if action_type == "waiting_custom_qr_amount":
+        text = (message.text or "").strip()
+        try:
+            amount = int(text)
+            del user_states[user_id]
+            unique_tr = f"R2FCUST{int(time.time())}"
+            upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
+            qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
+            
+            bot.send_photo(
+                message.chat.id,
+                photo=qr_api_url,
+                caption=f"🎨 *CUSTOM PAYMENT QR* ✅\n\n• *AMOUNT:* ₹{amount}\n• *UPI ID:* `{UPI_ID}`",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            bot.reply_to(message, "❌ KRIPYA SAHI AMOUNT (SIRF NUMBER) ENTER KAREIN!")
+        return
 
     if action_type == "waiting_loader_apk":
         loader_key = state["loader_key"]
@@ -606,8 +685,7 @@ def handle_admin_state_input(message):
         bot.reply_to(
             message,
             f"✅ *APK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n"
-            f"• *File Name:* `{file_name}`\n"
-            f"Ab koi bhi user APK & SETUP se ise instant download kar sakega.",
+            f"• *File Name:* `{file_name}`",
             parse_mode="Markdown"
         )
         return
@@ -666,7 +744,7 @@ def handle_admin_state_input(message):
             bot.reply_to(message, f"✅ *SINGLE KEY ADDED SUCCESSFULLY!* ✅\n\n• *DURATION:* {duration}\n• *KEY:* `{text}`", parse_mode="Markdown")
         except DuplicateKeyError:
             bot.reply_to(message, "❌ *DUPLICATE KEY ERROR!*\nYEH LICENSE KEY PEHLE SE DATABASE MEIN MOJOOD HAI.", parse_mode="Markdown")
-        except Exception as e:
+        except Exception:
             bot.reply_to(message, "❌ KEY ADD KARTE WAQT DATABASE ERROR AA GAYA.")
 
     elif action_type == "waiting_bulk_keys":
@@ -698,7 +776,7 @@ def handle_admin_state_input(message):
             else:
                 bot.reply_to(message, f"❌ KEY ID `{key_id}` NAHI MILI.", parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, "❌ SAHI KEY ID ENTER KAREIN (SIRF NUMBER HONA CHAHIYE).", parse_mode="Markdown")
+            bot.reply_to(message, "❌ SAHI KEY ID ENTER KAREIN.", parse_mode="Markdown")
 
     elif action_type == "waiting_bulk_del":
         lines = [line.strip() for line in text.split("\n") if line.strip()]
@@ -816,7 +894,7 @@ def handle_reply_menu(message):
 
 
 # ============================================================
-# SETUP CHANNEL CALLBACKS (SEND SAVED APK & WATCH SETUP VIDEO BUTTON)
+# SETUP CALLBACKS
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setup_"))
@@ -848,14 +926,14 @@ def handle_setup_callbacks(call):
         except Exception:
             bot.send_message(
                 call.message.chat.id,
-                f"❌ APK SEND KARNE MEIN ERROR AAYA. KRIPYA ADMIN SE DOBARA UPLOAD KARWAYEIN.\n\n📺 WATCH SETUP VIDEO LINK:",
+                f"❌ APK SEND KARNE MEIN ERROR AAYA.\n\n📺 WATCH SETUP VIDEO LINK:",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
     else:
         bot.send_message(
             call.message.chat.id,
-            f"❌ *APK NOT AVAILABLE YET!*\nADMIN NE ABHI IS LOADER KE LIYE APK UPLOAD NAHI KIYA HAI.\n\n📺 WATCH SETUP VIDEO LINK:",
+            f"❌ *APK NOT AVAILABLE YET!*\n\n📺 WATCH SETUP VIDEO LINK:",
             parse_mode="Markdown",
             reply_markup=markup
         )
@@ -903,29 +981,11 @@ def handle_support_chat_messages(message):
         )
         return
 
-    try:
-        user = message.from_user
-        username = f"@{user.username}" if user.username else "NO USERNAME"
-        first_name = user.first_name if user.first_name else "USER"
-
-        info_text = (
-            f"📩 *NEW SUPPORT MESSAGE FROM USER* ✅\n"
-            f"👤 NAME: {first_name}\n"
-            f"🆔 USER ID: `{user.id}`\n"
-            f"🔗 USERNAME: {username}"
-        )
-
-        sent_info = bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
-        sent_forward = bot.forward_message(ADMIN_ID, message.chat.id, message.id)
-
-        admin_reply_map[sent_info.message_id] = user.id
-        admin_reply_map[sent_forward.message_id] = user.id
-    except Exception as e:
-        print(f"ERROR FORWARDING SUPPORT MESSAGE TO ADMIN: {e}")
+    forward_message_to_admin(message)
 
 
 # ============================================================
-# HANDLE USER DELETE KEY FROM "MY KEYS"
+# HANDLE DELETE MY KEY
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delmykey_"))
@@ -949,7 +1009,7 @@ def handle_delete_my_key(call):
 
 
 # ============================================================
-# HANDLE PLAN
+# HANDLE PLAN (PURCHASE)
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
@@ -964,27 +1024,38 @@ def handle_plan(call):
     order_id = get_next_id("orders")
     orders_collection.insert_one({"id": order_id, "user_id": user_id, "duration": duration, "amount": amount, "created_at": current_time, "status": "pending"})
 
-    unique_tr = f"R2F{order_id}{int(current_time)}"
-    upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
-    qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
+    # Check if admin uploaded a static UPI QR code image
+    static_qr_doc = loaders_collection.find_one({"loader_key": "static_upi_qr"})
 
     caption_text = (
         "💳 *SCAN & PAY* ✅\n\n"
         f"• *PLAN:* {duration}\n"
-        f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n"
-        f"• *UPI ID:* `{UPI_ID}`\n\n"
+        f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
         "1️⃣ PEHLE PAYMENT KAREIN.\n"
         "2️⃣ APNE **PAYMENT SCREENSHOT** KO YAHIN CHAT MEIN SEND KAREIN."
     )
 
-    sent_msg = bot.send_photo(
-        chat_id=call.message.chat.id,
-        photo=qr_api_url,
-        caption=caption_text,
-        parse_mode="Markdown",
-        reply_markup=get_payment_reply_keyboard(),
-    )
+    if static_qr_doc and "file_id" in static_qr_doc:
+        sent_msg = bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=static_qr_doc["file_id"],
+            caption=caption_text,
+            parse_mode="Markdown",
+            reply_markup=get_payment_reply_keyboard(),
+        )
+    else:
+        unique_tr = f"R2F{order_id}{int(current_time)}"
+        upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
+        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
+
+        sent_msg = bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=qr_api_url,
+            caption=caption_text,
+            parse_mode="Markdown",
+            reply_markup=get_payment_reply_keyboard(),
+        )
 
     user_states[user_id] = {
         "type": "plan",
@@ -1246,21 +1317,8 @@ def handle_reset_key(call):
     func=lambda message: message.from_user.id != ADMIN_ID and message.from_user.id not in user_states,
     content_types=["text", "photo", "document", "video", "audio", "voice"],
 )
-def forward_user_messages_to_admin(message):
-    try:
-        user = message.from_user
-        username = f"@{user.username}" if user.username else "NO USERNAME"
-        first_name = user.first_name if user.first_name else "USER"
-
-        info_text = f"📩 *NEW MESSAGE FROM USER* ✅\n👤 NAME: {first_name}\n🆔 USER ID: `{user.id}`\n🔗 USERNAME: {username}"
-
-        sent_info = bot.send_message(ADMIN_ID, info_text, parse_mode="Markdown")
-        sent_forward = bot.forward_message(ADMIN_ID, message.chat.id, message.id)
-
-        admin_reply_map[sent_info.message_id] = user.id
-        admin_reply_map[sent_forward.message_id] = user.id
-    except Exception as e:
-        print(f"ERROR FORWARDING MESSAGE TO ADMIN: {e}")
+def forward_user_messages_to_admin_catchall(message):
+    forward_message_to_admin(message)
 
 
 # ============================================================
@@ -1290,7 +1348,7 @@ def handle_admin_reply(message):
         except Exception as e:
             bot.reply_to(message, f"❌ FAILED TO SEND REPLY: `{e}`", parse_mode="Markdown")
     else:
-        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_mode="Markdown")
+        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_Mode="Markdown")
 
 
 # ============================================================
