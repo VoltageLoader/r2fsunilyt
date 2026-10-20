@@ -29,6 +29,7 @@ ADMIN_ID = 6795305850
 UPI_ID = "8905094188@ybl"
 UPI_NAME = "NEXA CYBER"
 OWNER_USERNAME = "R2FSUNILYT"
+YT_CHANNEL_URL = "https://youtube.com/@R2FSUNILYT"  # Aapka YouTube Channel Link
 
 
 bot = telebot.TeleBot(TOKEN)
@@ -54,6 +55,7 @@ try:
     orders_collection = db["orders"]
     counters_collection = db["counters"]
     loaders_collection = db["loaders_table"]
+    free_claims_collection = db["free_claims"]
 
     keys_collection.create_index(
         [("license_key", ASCENDING)],
@@ -77,6 +79,12 @@ try:
         [("loader_key", ASCENDING)],
         unique=True,
         name="unique_loader_key",
+    )
+
+    free_claims_collection.create_index(
+        [("user_id", ASCENDING)],
+        unique=True,
+        name="unique_free_claim_user",
     )
 
     print("MONGODB CONNECTED SUCCESSFULLY!")
@@ -231,7 +239,7 @@ def get_payment_reply_keyboard():
 
 
 # ============================================================
-# START COMMAND
+# START COMMAND (YT SUBSCRIBE & GET 5 HR FREE KEY)
 # ============================================================
 
 @bot.message_handler(commands=["start"])
@@ -241,18 +249,99 @@ def send_welcome(message):
     if user_id in user_states:
         del user_states[user_id]
 
-    welcome_text = (
-        "💎 *WELCOME TO R2F OFFICIAL PREMIUM STORE* ✅\n\n"
-        "✨ *SAFE, FAST & SECURE SERVICES* 🛡️\n\n"
-        "👉 *CLICK THE MENU BUTTONS BELOW:* 👇"
+    # Check if user already claimed their free key
+    claimed = free_claims_collection.find_one({"user_id": user_id})
+    if claimed:
+        bot.send_message(
+            message.chat.id,
+            f"💎 *WELCOME BACK TO R2F OFFICIAL STORE* ✅\n\n"
+            f"❌ *Aap apni free 5-hour key pehle hi claim kar chuke hain!*\n\n"
+            f"🔑 *Aapki Key:* `{claimed.get('license_key')}`",
+            parse_mode="Markdown",
+            reply_markup=get_main_reply_keyboard(user_id),
+        )
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📺 SUBSCRIBE YOUTUBE CHANNEL", url=YT_CHANNEL_URL),
+        types.InlineKeyboardButton("✅ VERIFY & GET FREE KEY", callback_data="claim_free_key")
     )
 
     bot.send_message(
         message.chat.id,
-        welcome_text,
+        "💎 *WELCOME TO R2F OFFICIAL STORE* ✅\n\n"
+        "🎁 *GET FREE 5-HOUR KEY!* ✨\n\n"
+        "1️⃣ Pehle neeche diye gaye button par click karke hamara **YouTube Channel Subscribe** karein.\n"
+        "2️⃣ Subscribe karne ke baad **'VERIFY & GET FREE KEY'** button par click karein taaki aapko stock se free 5-hr key mil sake!\n\n"
+        "⚠️ *Note:* Ye offer sirf ek user ke liye ek hi baar hai.",
         parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(user_id),
+        reply_markup=markup,
     )
+
+
+# ============================================================
+# CLAIM FREE KEY CALLBACK
+# ============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data == "claim_free_key")
+def handle_claim_free_key(call):
+    user_id = call.from_user.id
+
+    # Double check if already claimed
+    claimed = free_claims_collection.find_one({"user_id": user_id})
+    if claimed:
+        bot.answer_callback_query(call.id, "❌ Aap pehle hi free key claim kar chuke hain!", show_alert=True)
+        return
+
+    # Find unused 5 Hour key from stock
+    key_row = keys_collection.find_one_and_update(
+        {
+            "duration": "5 Hour",
+            "status": "unused"
+        },
+        {
+            "$set": {
+                "status": "used",
+                "assigned_to": user_id
+            }
+        },
+        return_document=True
+    )
+
+    if not key_row:
+        bot.answer_callback_query(call.id, "❌ Out of stock! Filhal 5 Hour ki free key available nahi hai.", show_alert=True)
+        return
+
+    # Record the claim
+    try:
+        free_claims_collection.insert_one({
+            "user_id": user_id,
+            "key_id": key_row["id"],
+            "license_key": key_row["license_key"],
+            "claimed_at": time.time()
+        })
+    except Exception:
+        pass
+
+    bot.answer_callback_query(call.id, "🎉 Success! Aapko free key mil gayi hai.", show_alert=True)
+
+    try:
+        bot.edit_message_text(
+            f"🎉 *CONGRATULATIONS! YEH RAHI AAPKI FREE 5-HOUR KEY:* ✅\n\n"
+            f"🔑 `{key_row['license_key']}`\n\n"
+            f"⚠️ *Note:* Is key ko sambhal kar rakhein, ye dobara nahi milegi.",
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        bot.send_message(
+            call.message.chat.id,
+            f"🎉 *CONGRATULATIONS! YEH RAHI AAPKI FREE 5-HOUR KEY:* ✅\n\n"
+            f"🔑 `{key_row['license_key']}`",
+            parse_mode="Markdown"
+        )
 
 
 # ============================================================
@@ -1148,239 +1237,4 @@ def handle_user_payment_input(message):
 
         admin_text = (
             f"🔔 *NEW PAYMENT SCREENSHOT VERIFICATION!* ✅\n\n"
-            f"👤 *USER:* {first_name} ({username_str})\n"
-            f"🆔 *USER ID:* `{user_id}`\n"
-            f"⏱ *PLAN:* {duration}\n"
-            f"💵 *AMOUNT:* ₹{amount}"
-        )
-
-        try:
-            bot.send_photo(
-                ADMIN_ID,
-                photo=message.photo[-1].file_id,
-                caption=admin_text,
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
-        except Exception:
-            pass
-
-
-# ============================================================
-# ADMIN YES / NO CALLBACK
-# ============================================================
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("adm_"))
-def admin_approval_callback(call):
-    data = call.data
-    parts = data.split("_")
-    action = parts[1]
-    order_id = int(parts[2])
-
-    row = orders_collection.find_one({"id": order_id})
-    if not row:
-        bot.answer_callback_query(call.id, "ORDER NOT FOUND!")
-        return
-
-    user_id = row["user_id"]
-    duration = row["duration"]
-    status = row["status"]
-
-    if status not in ["pending", "pending_admin"]:
-        bot.answer_callback_query(call.id, f"ORDER IS ALREADY {status.upper()}!", show_alert=True)
-        return
-
-    try:
-        user_chat = bot.get_chat(user_id)
-        u_name = user_chat.first_name if user_chat.first_name else "USER"
-        u_uname = f"@{user_chat.username}" if user_chat.username else "NO USERNAME"
-    except Exception:
-        u_name = "USER"
-        u_uname = "NO USERNAME"
-
-    if action == "yes":
-        key_row = keys_collection.find_one({"duration": duration, "status": "unused"}, {"id": 1, "license_key": 1})
-        if not key_row:
-            bot.answer_callback_query(call.id, "❌ OUT OF STOCK!", show_alert=True)
-            return
-
-        key_id = key_row["id"]
-        license_key = key_row["license_key"]
-
-        assigned_key = keys_collection.find_one_and_update(
-            {"id": key_id, "status": "unused"},
-            {"$set": {"status": "used", "assigned_to": user_id}},
-            return_document=True
-        )
-
-        if not assigned_key:
-            bot.answer_callback_query(call.id, "❌ KEY ALREADY TAKEN.", show_alert=True)
-            return
-
-        orders_collection.update_one({"id": order_id}, {"$set": {"status": "approved"}})
-        bot.answer_callback_query(call.id, "PAYMENT VERIFIED & KEY SENT!")
-
-        try:
-            bot.edit_message_caption(
-                f"{call.message.caption}\n\n"
-                f"STATUS: *✅ APPROVED (YES)* ✅\n"
-                f"👤 USER NAME: {u_name}\n"
-                f"🔗 USERNAME: {u_uname}\n"
-                f"🆔 USER ID: `{user_id}`\n"
-                f"🔑 GIVEN KEY: `{license_key}`",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-
-        try:
-            bot.send_message(
-                user_id,
-                f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!* ✅\n\n• *PLAN:* {duration}\n• *YOUR LICENSE KEY:*\n`{license_key}`",
-                parse_mode="Markdown",
-                reply_markup=get_main_reply_keyboard(user_id),
-            )
-        except Exception:
-            pass
-
-    else:
-        orders_collection.delete_one({"id": order_id})
-        bot.answer_callback_query(call.id, "PAYMENT REJECTED & ORDER DELETED.")
-
-        try:
-            bot.edit_message_caption(
-                f"{call.message.caption}\n\nSTATUS: *❌ REJECTED & DELETED (NO)*",
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                parse_mode="Markdown",
-            )
-        except Exception:
-            pass
-
-        try:
-            bot.send_message(
-                user_id,
-                "Madarchod payment kar fir screen shot de",
-                parse_mode="Markdown",
-                reply_markup=get_main_reply_keyboard(user_id),
-            )
-        except Exception:
-            pass
-
-
-# ============================================================
-# CANCEL ORDER
-# ============================================================
-
-@bot.message_handler(func=lambda message: "ORDER CANCEL" in (message.text or "").upper())
-def handle_cancel_button(message):
-    user_id = message.from_user.id
-    if user_id not in user_states:
-        bot.send_message(message.chat.id, "❌ ACTION CANCELLED.", reply_markup=get_main_reply_keyboard(user_id))
-        return
-
-    state = user_states[user_id]
-    order_id = state["order_id"]
-
-    if "qr_msg_id" in state:
-        try:
-            bot.delete_message(message.chat.id, state["qr_msg_id"])
-        except Exception:
-            pass
-
-    orders_collection.delete_one({"id": order_id})
-    del user_states[user_id]
-
-    bot.send_message(message.chat.id, "❌ PAYMENT CANCELLED SUCCESSFULLY.", reply_markup=get_main_reply_keyboard(user_id))
-
-
-# ============================================================
-# RESET KEY
-# ============================================================
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("reset_"))
-def handle_reset_key(call):
-    key_id = call.data.split("_")[1]
-    user_id = call.from_user.id
-
-    bot.answer_callback_query(call.id, "🔄 RESET REQUEST SENT TO OWNER/ADMIN SUCCESSFULLY! ✅", show_alert=True)
-    bot.send_message(ADMIN_ID, f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID: `{key_id}`", parse_mode="Markdown")
-
-
-# ============================================================
-# CATCH-ALL: FORWARD USER MESSAGES TO ADMIN
-# ============================================================
-
-@bot.message_handler(
-    func=lambda message: message.from_user.id != ADMIN_ID and message.from_user.id not in user_states,
-    content_types=["text", "photo", "document", "video", "audio", "voice"],
-)
-def forward_user_messages_to_admin_catchall(message):
-    forward_message_to_admin(message)
-
-
-# ============================================================
-# ADMIN REPLY TO USER
-# ============================================================
-
-@bot.message_handler(
-    func=lambda message: message.from_user.id == ADMIN_ID and message.reply_to_message is not None,
-    content_types=["text", "photo", "document", "video", "audio", "voice"],
-)
-def handle_admin_reply(message):
-    reply_msg = message.reply_to_message
-    target_user_id = admin_reply_map.get(reply_msg.message_id)
-
-    if not target_user_id:
-        text_content = reply_msg.text or reply_msg.caption or ""
-        match = re.search(r"USER ID:\s*`?(\d+)`?", text_content, re.IGNORECASE)
-        if match:
-            target_user_id = int(match.group(1))
-        elif reply_msg.forward_from:
-            target_user_id = reply_msg.forward_from.id
-
-    if target_user_id:
-        try:
-            bot.copy_message(chat_id=target_user_id, from_chat_id=message.chat.id, message_id=message.id)
-            bot.reply_to(message, "✅ *REPLY SUCCESSFULLY SENT TO USER!* ✅", parse_mode="Markdown")
-        except Exception as e:
-            bot.reply_to(message, f"❌ FAILED TO SEND REPLY: `{e}`", parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_Mode="Markdown")
-
-
-# ============================================================
-# FLASK SERVER
-# ============================================================
-
-app = Flask(__name__)
-
-
-@app.route("/")
-def home():
-    return "BOT IS ACTIVE AND RUNNING SMOOTHLY WITH MONGODB!"
-
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-
-# ============================================================
-# START BOT
-# ============================================================
-
-if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    try:
-        bot.remove_webhook()
-        bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        print(f"WEBHOOK CLEANUP ERROR: {e}")
-
-    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
-
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+            f"👤 *USER:* {first_name
