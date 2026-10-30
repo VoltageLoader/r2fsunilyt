@@ -314,6 +314,7 @@ def get_android_manager_reply_keyboard():
         types.KeyboardButton("📺 Video"),
         types.KeyboardButton("🔑 Add Keys"),
         types.KeyboardButton("🪣 Del Keys"),
+        types.KeyboardButton("📦 Stock"),
         types.KeyboardButton("🔙 Back")
     )
     return markup
@@ -326,6 +327,7 @@ def get_ios_manager_reply_keyboard():
         types.KeyboardButton("📺 iOS Video"),
         types.KeyboardButton("🔑 Add iOS Keys"),
         types.KeyboardButton("🪣 Del iOS Keys"),
+        types.KeyboardButton("📦 iOS Stock"),
         types.KeyboardButton("🔙 Back")
     )
     return markup
@@ -473,11 +475,11 @@ def handle_platform_back(message):
             set_user_state(ADMIN_ID, {"type": "qr_manager"})
             show_menu(message, "⚡ *QR CODE MANAGER*:", get_qr_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur"]:
+        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur", "view_stock_select_dur"]:
             set_user_state(ADMIN_ID, {"type": "android_manager"})
             show_menu(message, "📂 *ANDROID MANAGER*:", get_android_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur"]:
+        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur", "ios_view_stock_select_dur"]:
             set_user_state(ADMIN_ID, {"type": "ios_manager"})
             show_menu(message, "🍏 *iOS MANAGER*:", get_ios_manager_reply_keyboard())
             return
@@ -664,6 +666,9 @@ def handle_admin_state_input(message):
         elif text == "🪣 Del Keys":
             set_user_state(ADMIN_ID, {"type": "delete_menu_choice", "platform": "android"})
             show_menu(message, "🪣 *DELETE ANDROID KEYS*\n\nOPTION SELECT KAREIN:", get_delete_options_reply_keyboard())
+        elif text == "📦 Stock":
+            set_user_state(ADMIN_ID, {"type": "view_stock_select_dur", "platform": "android"})
+            show_menu(message, "📦 *ANDROID STOCK CHECK*\n\nDURATION SELECT KAREIN:", get_android_durations_reply_keyboard())
         return
 
     if action_type == "ios_manager":
@@ -679,7 +684,44 @@ def handle_admin_state_input(message):
         elif text == "🪣 Del iOS Keys":
             set_user_state(ADMIN_ID, {"type": "ios_delete_menu_choice", "platform": "ios"})
             show_menu(message, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", get_delete_options_reply_keyboard())
+        elif text == "📦 iOS Stock":
+            set_user_state(ADMIN_ID, {"type": "ios_view_stock_select_dur", "platform": "ios"})
+            show_menu(message, "📦 *iOS STOCK CHECK*\n\nDURATION SELECT KAREIN:", get_ios_durations_reply_keyboard())
         return
+
+    # View Stock Display Handler (Android & iOS)
+    if action_type in ["view_stock_select_dur", "ios_view_stock_select_dur"]:
+        if text.startswith("⏱ "):
+            dur = text.replace("⏱ ", "")
+            platform = state["platform"]
+            del user_states[ADMIN_ID]
+
+            unused_keys = list(keys_collection.find({"platform": platform, "duration": dur, "status": "unused"}, {"license_key": 1}))
+            total_count = len(unused_keys)
+
+            if total_count == 0:
+                show_menu(message, f"❌ *NO STOCK AVAILABLE!*\n\n• Platform: `{platform.upper()}`\n• Duration: `{dur}`", get_super_admin_reply_keyboard())
+                return
+
+            keys_text_list = []
+            for idx, k_doc in enumerate(unused_keys, 1):
+                keys_text_list.append(f"{idx}. `{k_doc['license_key']}`")
+
+            # Split in chunks if too long for a single telegram message (max ~4000 chars)
+            chunk_size = 30
+            for i in range(0, total_count, chunk_size):
+                chunk = keys_text_list[i:i+chunk_size]
+                chunk_str = "\n".join(chunk)
+                msg_content = (
+                    f"📦 *STOCK LIST ({platform.upper()})*\n"
+                    f"⏱ *DURATION:* `{dur}` | *TOTAL:* `{total_count}`\n\n"
+                    f"{chunk_str}"
+                )
+                if i == 0:
+                    show_menu(message, msg_content, get_super_admin_reply_keyboard())
+                else:
+                    bot.send_message(message.chat.id, msg_content, parse_mode="Markdown")
+            return
 
     if action_type in ["delete_menu_choice", "ios_delete_menu_choice"]:
         platform = state["platform"]
@@ -1301,7 +1343,7 @@ def handle_user_payment_input(message):
             handle_cancel_button(message)
             return
 
-        if any(menu_item in text for menu_item = ["🤖 Android", "🍏 iOS", "👑 Super Admin", "📢 Broadcast", "💬 Support", "🔚 Back", "🔙 Back"]) or text.startswith("/"):
+        if any(menu_item in text for menu_item in ["🤖 Android", "🍏 iOS", "👑 Super Admin", "📢 Broadcast", "💬 Support", "🔚 Back", "🔙 Back"]) or text.startswith("/"):
             if user_id in user_states and "qr_msg_id" in user_states[user_id]:
                 try:
                     bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
