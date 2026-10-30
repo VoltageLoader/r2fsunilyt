@@ -54,6 +54,7 @@ try:
     orders_collection = db["orders"]
     counters_collection = db["counters"]
     loaders_collection = db["loaders_table"]
+    blocked_collection = db["blocked_users"]
 
     keys_collection.create_index(
         [("license_key", ASCENDING)],
@@ -77,6 +78,12 @@ try:
         [("loader_key", ASCENDING)],
         unique=True,
         name="unique_loader_key",
+    )
+
+    blocked_collection.create_index(
+        [("user_id", ASCENDING)],
+        unique=True,
+        name="unique_blocked_user",
     )
 
     print("MONGODB CONNECTED SUCCESSFULLY!")
@@ -109,6 +116,16 @@ user_last_notif = {}  # Tracks last time user info header was sent to admin (24 
 
 
 # ============================================================
+# HELPER: CHECK IF USER IS BLOCKED
+# ============================================================
+
+def is_blocked(user_id):
+    if user_id == ADMIN_ID:
+        return False
+    return blocked_collection.find_one({"user_id": user_id}) is not None
+
+
+# ============================================================
 # HELPER: FORWARD MESSAGE TO ADMIN (ONCE PER 24 HR INFO HEADER)
 # ============================================================
 
@@ -116,6 +133,9 @@ def forward_message_to_admin(message):
     try:
         user = message.from_user
         user_id = user.id
+        if is_blocked(user_id):
+            return
+
         current_time = time.time()
 
         # Send info header only once every 24 hours (86400 seconds)
@@ -196,6 +216,37 @@ def get_main_reply_keyboard(user_id=None):
     return markup
 
 
+def get_super_admin_reply_keyboard():
+    markup = types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        row_width=2
+    )
+    markup.add(
+        types.KeyboardButton("🖼️ UPLOAD STATIC UPI QR"),
+        types.KeyboardButton("🎨 GENERATE CUSTOM QR")
+    )
+    markup.add(
+        types.KeyboardButton("⚡ GENERATE QR"),
+        types.KeyboardButton("📂 ADD LOADER")
+    )
+    markup.add(
+        types.KeyboardButton("📺 ADD SETUP VIDEO"),
+        types.KeyboardButton("➕ ADD SINGLE KEY")
+    )
+    markup.add(
+        types.KeyboardButton("📦 ADD BULK KEY"),
+        types.KeyboardButton("❌ DELETE SINGLE KEY")
+    )
+    markup.add(
+        types.KeyboardButton("🗑️ DELETE BULK KEYS"),
+        types.KeyboardButton("📋 SHOW ALL KEYS")
+    )
+    markup.add(
+        types.KeyboardButton("🔙 BACK TO MAIN MENU")
+    )
+    return markup
+
+
 def get_support_reply_keyboard():
     markup = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
@@ -237,6 +288,8 @@ def get_payment_reply_keyboard():
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
 
     if user_id in user_states:
         del user_states[user_id]
@@ -256,12 +309,14 @@ def send_welcome(message):
 
 
 # ============================================================
-# BACK BUTTON
+# BACK BUTTONS
 # ============================================================
 
-@bot.message_handler(func=lambda message: message.text == "🔚 BACK")
+@bot.message_handler(func=lambda message: message.text in ["🔚 BACK", "🔙 BACK TO MAIN MENU"])
 def handle_back_button(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
 
     if user_id in user_states:
         if "qr_msg_id" in user_states[user_id]:
@@ -370,7 +425,7 @@ def handle_genkey_callback(call):
 
 
 # ============================================================
-# SUPER ADMIN PANEL
+# SUPER ADMIN PANEL (REPLY KEYBOARD)
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.text == "👑 SUPER ADMIN")
@@ -379,26 +434,152 @@ def super_admin_panel(message):
         bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED!")
         return
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("🖼️ UPLOAD STATIC UPI QR", callback_data="sa_upload_qr_menu"),
-        types.InlineKeyboardButton("🎨 GENERATE CUSTOM QR", callback_data="sa_custom_qr"),
-        types.InlineKeyboardButton("➕ ADD LOADER (UPLOAD APK)", callback_data="sa_add_loader_menu"),
-        types.InlineKeyboardButton("📺 ADD SETUP VIDEO LINK", callback_data="sa_add_video_menu"),
-        types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data="sa_add_single"),
-        types.InlineKeyboardButton("📦 ADD BULK KEY", callback_data="sa_add_bulk"),
-        types.InlineKeyboardButton("❌ DELETE SINGLE KEY", callback_data="sa_del_single"),
-        types.InlineKeyboardButton("🗑️ DELETE BULK KEYS", callback_data="sa_del_bulk"),
-        types.InlineKeyboardButton("📋 SHOW ALL KEYS", callback_data="sa_show_keys"),
-    )
-
     bot.send_message(
         message.chat.id,
         "👑 *SUPER ADMIN PANEL* ✅\n\n"
         "NICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
         parse_mode="Markdown",
+        reply_markup=get_super_admin_reply_keyboard(),
+    )
+
+
+# ============================================================
+# SUPER ADMIN REPLY BUTTON HANDLERS
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "🖼️ UPLOAD STATIC UPI QR")
+def sa_upload_qr_handler(message):
+    user_states[ADMIN_ID] = {"type": "waiting_upi_qr_photo"}
+    bot.send_message(
+        message.chat.id,
+        "🖼️ *UPLOAD STATIC UPI QR* ✅\n\n💬 APNA UPI QR CODE IMAGE (.jpg/.png) YAHAN CHAT MEIN SEND KAREIN:",
+        parse_mode="Markdown",
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "🎨 GENERATE CUSTOM QR")
+def sa_custom_qr_handler(message):
+    user_states[ADMIN_ID] = {"type": "waiting_custom_qr_amount"}
+    bot.send_message(
+        message.chat.id,
+        "🎨 *GENERATE CUSTOM QR* ✅\n\n💬 AMOUNT ENTER KAREIN (JAISE: `99` YA `199`):",
+        parse_mode="Markdown",
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "⚡ GENERATE QR")
+def sa_generate_qr_handler(message):
+    user_states[ADMIN_ID] = {"type": "waiting_custom_qr_amount"}
+    bot.send_message(
+        message.chat.id,
+        "⚡ *GENERATE QR* ✅\n\n💬 AMOUNT ENTER KAREIN (JAISE: `99` YA `199`):",
+        parse_mode="Markdown",
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📂 ADD LOADER")
+def sa_add_loader_handler(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("⚙️ VOLTAGE LOADER", callback_data="sa_ldr_voltage_loader"),
+        types.InlineKeyboardButton("🚀 VIP LOADER", callback_data="sa_ldr_vip_loader"),
+        types.InlineKeyboardButton("💎 NICE X NEXA", callback_data="sa_ldr_nicexnexa"),
+        types.InlineKeyboardButton("⚡ NICE X NEXA SERVER", callback_data="sa_ldr_nicexnexaserver"),
+    )
+    bot.send_message(
+        message.chat.id,
+        "📂 *ADD LOADER (UPLOAD APK)* ✅\n\nKIS LOADER KE LIYE APK UPLOAD KARI HAI SELECT KAREIN:",
+        parse_mode="Markdown",
         reply_markup=markup,
     )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📺 ADD SETUP VIDEO")
+def sa_add_video_handler(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("⚙️ VOLTAGE LOADER", callback_data="sa_vldr_voltage_loader"),
+        types.InlineKeyboardButton("🚀 VIP LOADER", callback_data="sa_vldr_vip_loader"),
+        types.InlineKeyboardButton("💎 NICE X NEXA", callback_data="sa_vldr_nicexnexa"),
+        types.InlineKeyboardButton("⚡ NICE X NEXA SERVER", callback_data="sa_vldr_nicexnexaserver"),
+    )
+    bot.send_message(
+        message.chat.id,
+        "📺 *ADD SETUP VIDEO LINK* ✅\n\nKIS LOADER KE LIYE SETUP VIDEO LINK ADD KARNA HAI SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "➕ ADD SINGLE KEY")
+def sa_add_single_handler(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_sdur_{cb_val}"))
+
+    bot.send_message(
+        message.chat.id,
+        "➕ *ADD SINGLE KEY* ✅\n\nDURATION SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📦 ADD BULK KEY")
+def sa_add_bulk_handler(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+    for d in durations:
+        cb_val = d.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_bdur_{cb_val}"))
+
+    bot.send_message(
+        message.chat.id,
+        "📦 *ADD BULK KEYS* ✅\n\nDURATION SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "❌ DELETE SINGLE KEY")
+def sa_del_single_handler(message):
+    user_states[ADMIN_ID] = {"type": "waiting_del_id"}
+    bot.send_message(
+        message.chat.id,
+        "❌ *DELETE SINGLE KEY* ✅\n\n💬 JIS KEY KO DELETE KARNA HAI USKA **KEY ID** YAHAN SEND KAREIN:",
+        parse_mode="Markdown",
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "🗑️ DELETE BULK KEYS")
+def sa_del_bulk_handler(message):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📋 PASTE KEYS TO DELETE IN BULK", callback_data="sa_del_paste_bulk"),
+        types.InlineKeyboardButton("🗑️ DELETE ALL UNUSED KEYS", callback_data="sa_del_all_unused"),
+    )
+    bot.send_message(
+        message.chat.id,
+        "🗑️ *DELETE BULK OPTIONS* ✅\n\nOPTION SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=markup,
+    )
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📋 SHOW ALL KEYS")
+def sa_show_keys_handler(message):
+    keys = list(keys_collection.find({}, {"id": 1, "duration": 1, "license_key": 1, "status": 1, "assigned_to": 1}).sort("id", DESCENDING).limit(50))
+    if not keys:
+        bot.send_message(message.chat.id, "❌ DATABASE MEIN KOI KEYS AVAILABLE NAHI HAIN.")
+        return
+
+    text = "📋 *ALL STORED KEYS (LAST 50):* ✅\n\n"
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    for key in keys:
+        kid = key["id"]
+        duration = key.get("duration", "")
+        license_key = key.get("license_key", "")
+        status = key.get("status", "unused")
+        assigned_to = key.get("assigned_to")
+
+        status_icon = "🟢 UNUSED" if status == "unused" else f"🔴 USED (USER: {assigned_to})"
+        text += f"🆔 ID: `{kid}` | *{duration}*\n🔑 `{license_key}`\nSTATUS: {status_icon}\n\n"
+        markup.add(types.InlineKeyboardButton(f"🗑️ DELETE ID {kid}", callback_data=f"sa_del_id_{kid}"))
+
+    bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 # ============================================================
@@ -413,59 +594,7 @@ def super_admin_callbacks(call):
 
     data = call.data
 
-    if data == "sa_upload_qr_menu":
-        bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_upi_qr_photo"}
-        bot.send_message(
-            call.message.chat.id,
-            "🖼️ *UPLOAD STATIC UPI QR* ✅\n\n💬 APNA UPI QR CODE IMAGE (.jpg/.png) YAHAN CHAT MEIN SEND KAREIN:",
-            parse_mode="Markdown",
-        )
-
-    elif data == "sa_custom_qr":
-        bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_custom_qr_amount"}
-        bot.send_message(
-            call.message.chat.id,
-            "🎨 *GENERATE CUSTOM QR* ✅\n\n💬 AMOUNT ENTER KAREIN (JAISE: `99` YA `199`):",
-            parse_mode="Markdown",
-        )
-
-    elif data == "sa_add_loader_menu":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("⚙️ VOLTAGE LOADER", callback_data="sa_ldr_voltage_loader"),
-            types.InlineKeyboardButton("🚀 VIP LOADER", callback_data="sa_ldr_vip_loader"),
-            types.InlineKeyboardButton("💎 NICE X NEXA", callback_data="sa_ldr_nicexnexa"),
-            types.InlineKeyboardButton("⚡ NICE X NEXA SERVER", callback_data="sa_ldr_nicexnexaserver"),
-        )
-        bot.edit_message_text(
-            "📂 *ADD LOADER (UPLOAD APK)* ✅\n\nKIS LOADER KE LIYE APK UPLOAD KARI HAI SELECT KAREIN:",
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-
-    elif data == "sa_add_video_menu":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("⚙️ VOLTAGE LOADER", callback_data="sa_vldr_voltage_loader"),
-            types.InlineKeyboardButton("🚀 VIP LOADER", callback_data="sa_vldr_vip_loader"),
-            types.InlineKeyboardButton("💎 NICE X NEXA", callback_data="sa_vldr_nicexnexa"),
-            types.InlineKeyboardButton("⚡ NICE X NEXA SERVER", callback_data="sa_vldr_nicexnexaserver"),
-        )
-        bot.edit_message_text(
-            "📺 *ADD SETUP VIDEO LINK* ✅\n\nKIS LOADER KE LIYE SETUP VIDEO LINK ADD KARNA HAI SELECT KAREIN:",
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-
-    elif data.startswith("sa_ldr_"):
+    if data.startswith("sa_ldr_"):
         loader_key = data.replace("sa_ldr_", "")
         bot.answer_callback_query(call.id)
         user_states[ADMIN_ID] = {"type": "waiting_loader_apk", "loader_key": loader_key}
@@ -487,22 +616,6 @@ def super_admin_callbacks(call):
             parse_mode="Markdown",
         )
 
-    elif data == "sa_add_single":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
-        for d in durations:
-            cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_sdur_{cb_val}"))
-
-        bot.edit_message_text(
-            "➕ *ADD SINGLE KEY* ✅\n\nDURATION SELECT KAREIN:",
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-
     elif data.startswith("sa_sdur_"):
         duration = data.replace("sa_sdur_", "").replace("_", " ")
         bot.answer_callback_query(call.id)
@@ -513,22 +626,6 @@ def super_admin_callbacks(call):
             parse_mode="Markdown",
         )
 
-    elif data == "sa_add_bulk":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
-        for d in durations:
-            cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_bdur_{cb_val}"))
-
-        bot.edit_message_text(
-            "📦 *ADD BULK KEYS* ✅\n\nDURATION SELECT KAREIN:",
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-
     elif data.startswith("sa_bdur_"):
         duration = data.replace("sa_bdur_", "").replace("_", " ")
         bot.answer_callback_query(call.id)
@@ -537,30 +634,6 @@ def super_admin_callbacks(call):
             call.message.chat.id,
             f"📦 *ADD BULK KEYS* ✅\n\nDURATION: *{duration}*\n\n💬 MULTIPLE KEYS **EK LINE MEIN EK KEY** KARKE YAHAN PASTE/SEND KAREIN:",
             parse_mode="Markdown",
-        )
-
-    elif data == "sa_del_single":
-        bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_del_id"}
-        bot.send_message(
-            call.message.chat.id,
-            "❌ *DELETE SINGLE KEY* ✅\n\n💬 JIS KEY KO DELETE KARNA HAI USKA **KEY ID** YAHAN SEND KAREIN:",
-            parse_mode="Markdown",
-        )
-
-    elif data == "sa_del_bulk":
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("📋 PASTE KEYS TO DELETE IN BULK", callback_data="sa_del_paste_bulk"),
-            types.InlineKeyboardButton("🗑️ DELETE ALL UNUSED KEYS", callback_data="sa_del_all_unused"),
-        )
-        bot.edit_message_text(
-            "🗑️ *DELETE BULK OPTIONS* ✅\n\nOPTION SELECT KAREIN:",
-            call.message.chat.id,
-            call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
         )
 
     elif data == "sa_del_paste_bulk":
@@ -580,28 +653,6 @@ def super_admin_callbacks(call):
             f"✅ SAARI UNUSED KEYS SUCCESSFULLY DELETE KAR DI GAYI HAIN! ✅\n\nTOTAL DELETED: `{result.deleted_count}`",
             parse_mode="Markdown",
         )
-
-    elif data == "sa_show_keys":
-        bot.answer_callback_query(call.id)
-        keys = list(keys_collection.find({}, {"id": 1, "duration": 1, "license_key": 1, "status": 1, "assigned_to": 1}).sort("id", DESCENDING).limit(50))
-        if not keys:
-            bot.send_message(call.message.chat.id, "❌ DATABASE MEIN KOI KEYS AVAILABLE NAHI HAIN.")
-            return
-
-        text = "📋 *ALL STORED KEYS (LAST 50):* ✅\n\n"
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        for key in keys:
-            kid = key["id"]
-            duration = key.get("duration", "")
-            license_key = key.get("license_key", "")
-            status = key.get("status", "unused")
-            assigned_to = key.get("assigned_to")
-
-            status_icon = "🟢 UNUSED" if status == "unused" else f"🔴 USED (USER: {assigned_to})"
-            text += f"🆔 ID: `{kid}` | *{duration}*\n🔑 `{license_key}`\nSTATUS: {status_icon}\n\n"
-            markup.add(types.InlineKeyboardButton(f"🗑️ DELETE ID {kid}", callback_data=f"sa_del_id_{kid}"))
-
-        bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
 
     elif data.startswith("sa_del_id_"):
         kid = int(data.split("_")[3])
@@ -729,7 +780,7 @@ def handle_admin_state_input(message):
             super_admin_panel(message)
         elif text == "🔑 GENERATE KEY":
             handle_gen_key_menu(message)
-        elif text == "🔚 BACK":
+        elif text in ["🔚 BACK", "🔙 BACK TO MAIN MENU"]:
             handle_back_button(message)
         else:
             handle_reply_menu(message)
@@ -808,6 +859,8 @@ def handle_admin_state_input(message):
 )
 def handle_reply_menu(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
 
     if user_id in user_states:
         del user_states[user_id]
@@ -899,6 +952,10 @@ def handle_reply_menu(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setup_"))
 def handle_setup_callbacks(call):
+    if is_blocked(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+
     bot.answer_callback_query(call.id)
     key = call.data.replace("setup_", "")
 
@@ -952,6 +1009,9 @@ def handle_setup_callbacks(call):
 )
 def handle_support_chat_messages(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
+
     text = (message.text or "").strip()
 
     if text == "🔚 BACK":
@@ -991,6 +1051,10 @@ def handle_support_chat_messages(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delmykey_"))
 def handle_delete_my_key(call):
     user_id = call.from_user.id
+    if is_blocked(user_id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+
     try:
         key_id = int(call.data.split("_")[1])
     except Exception:
@@ -1014,11 +1078,15 @@ def handle_delete_my_key(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
 def handle_plan(call):
+    user_id = call.from_user.id
+    if is_blocked(user_id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+
     bot.answer_callback_query(call.id)
     parts = call.data.split("_")
     amount = int(parts[-1])
     duration = "_".join(parts[1:-1]).replace("_", " ")
-    user_id = call.from_user.id
     current_time = time.time()
 
     order_id = get_next_id("orders")
@@ -1085,6 +1153,9 @@ def handle_plan(call):
 )
 def handle_user_payment_input(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
+
     state = user_states[user_id]
 
     if message.text:
@@ -1277,6 +1348,9 @@ def admin_approval_callback(call):
 @bot.message_handler(func=lambda message: "ORDER CANCEL" in (message.text or "").upper())
 def handle_cancel_button(message):
     user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
+
     if user_id not in user_states:
         bot.send_message(message.chat.id, "❌ ACTION CANCELLED.", reply_markup=get_main_reply_keyboard(user_id))
         return
@@ -1302,8 +1376,12 @@ def handle_cancel_button(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reset_"))
 def handle_reset_key(call):
-    key_id = call.data.split("_")[1]
     user_id = call.from_user.id
+    if is_blocked(user_id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+
+    key_id = call.data.split("_")[1]
 
     bot.answer_callback_query(call.id, "🔄 RESET REQUEST SENT TO OWNER/ADMIN SUCCESSFULLY! ✅", show_alert=True)
     bot.send_message(ADMIN_ID, f"⚠ *KEY RESET REQUEST*\nUSER ID: `{user_id}` REQUESTED RESET FOR KEY ID: `{key_id}`", parse_mode="Markdown")
@@ -1318,11 +1396,13 @@ def handle_reset_key(call):
     content_types=["text", "photo", "document", "video", "audio", "voice"],
 )
 def forward_user_messages_to_admin_catchall(message):
+    if is_blocked(message.from_user.id):
+        return
     forward_message_to_admin(message)
 
 
 # ============================================================
-# ADMIN REPLY TO USER
+# ADMIN REPLY TO USER (AND BLOCK FEATURE)
 # ============================================================
 
 @bot.message_handler(
@@ -1341,14 +1421,31 @@ def handle_admin_reply(message):
         elif reply_msg.forward_from:
             target_user_id = reply_msg.forward_from.id
 
-    if target_user_id:
+    if not target_user_id:
+        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_mode="Markdown")
+        return
+
+    admin_text = (message.text or "").strip().lower()
+
+    # If admin replies with "block", block the user
+    if admin_text == "block":
         try:
-            bot.copy_message(chat_id=target_user_id, from_chat_id=message.chat.id, message_id=message.id)
-            bot.reply_to(message, "✅ *REPLY SUCCESSFULLY SENT TO USER!* ✅", parse_mode="Markdown")
+            blocked_collection.update_one(
+                {"user_id": target_user_id},
+                {"$set": {"user_id": target_user_id}},
+                upsert=True
+            )
+            bot.reply_to(message, f"✅ User `{target_user_id}` has been **BLOCKED** successfully! 🚫", parse_mode="Markdown")
         except Exception as e:
-            bot.reply_to(message, f"❌ FAILED TO SEND REPLY: `{e}`", parse_mode="Markdown")
-    else:
-        bot.reply_to(message, "❌ TARGET USER ID NAHI MILA. KRIPYA USER KE **INFO MESSAGE** PAR REPLY KAREIN.", parse_Mode="Markdown")
+            bot.reply_to(message, f"❌ Failed to block user: `{e}`", parse_mode="Markdown")
+        return
+
+    # Regular message copy/reply to user
+    try:
+        bot.copy_message(chat_id=target_user_id, from_chat_id=message.chat.id, message_id=message.id)
+        bot.reply_to(message, "✅ Message Sent Successfully", parse_mode="Markdown")
+    except Exception as e:
+        bot.reply_to(message, "❌ Message Not Sent", parse_mode="Markdown")
 
 
 # ============================================================
@@ -1378,6 +1475,7 @@ if __name__ == "__main__":
     try:
         bot.remove_webhook()
         bot.delete_webhook(drop_pending_updates=True)
+        bot.set_my_commands([])
     except Exception as e:
         print(f"WEBHOOK CLEANUP ERROR: {e}")
 
