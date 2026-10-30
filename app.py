@@ -55,6 +55,7 @@ try:
     counters_collection = db["counters"]
     loaders_collection = db["loaders_table"]
     blocked_collection = db["blocked_users"]
+    users_collection = db["users_table"]
 
     keys_collection.create_index(
         [("license_key", ASCENDING)],
@@ -63,7 +64,7 @@ try:
     )
 
     keys_collection.create_index(
-        [("duration", ASCENDING), ("status", ASCENDING)]
+        [("platform", ASCENDING), ("duration", ASCENDING), ("status", ASCENDING)]
     )
 
     keys_collection.create_index(
@@ -84,6 +85,12 @@ try:
         [("user_id", ASCENDING)],
         unique=True,
         name="unique_blocked_user",
+    )
+
+    users_collection.create_index(
+        [("user_id", ASCENDING)],
+        unique=True,
+        name="unique_user_id",
     )
 
     print("MONGODB CONNECTED SUCCESSFULLY!")
@@ -154,9 +161,14 @@ def forward_message_to_admin(message):
         if is_blocked(user_id):
             return
 
+        users_collection.update_one(
+            {"user_id": user_id},
+            {"$set": {"user_id": user_id, "username": user.username, "first_name": user.first_name}},
+            upsert=True
+        )
+
         current_time = time.time()
 
-        # Send info header only once every 24 hours (86400 seconds)
         if user_id not in user_last_notif or (current_time - user_last_notif[user_id]) > 86400:
             user_last_notif[user_id] = current_time
             username = f"@{user.username}" if user.username else "NO USERNAME"
@@ -196,7 +208,7 @@ def send_timeout_failed_message(
                     "❌ *APPROVAL REQUEST CLOSED.*\n"
                     f"📩 *TRY AGAIN — CONTACT:* @{OWNER_USERNAME} ✅",
                     parse_mode="Markdown",
-                    reply_markup=get_main_reply_keyboard(user_id),
+                    reply_markup=get_platform_keyboard(user_id),
                 )
             except Exception:
                 pass
@@ -209,28 +221,59 @@ def send_timeout_failed_message(
 # KEYBOARDS
 # ============================================================
 
-def get_main_reply_keyboard(user_id=None):
+def get_platform_keyboard(user_id=None):
     markup = types.ReplyKeyboardMarkup(
         resize_keyboard=True,
         row_width=2
     )
+    markup.add(
+        types.KeyboardButton("🤖 ANDROID"),
+        types.KeyboardButton("🍏 iOS")
+    )
+    if user_id == ADMIN_ID:
+        markup.add(
+            types.KeyboardButton("👑 SUPER ADMIN"),
+            types.KeyboardButton("📢 BROADCAST")
+        )
+    markup.add(
+        types.KeyboardButton("💬 CONTACT SUPPORT")
+    )
+    return markup
 
+
+def get_android_main_keyboard(user_id=None):
+    markup = types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        row_width=2
+    )
     markup.add(
         types.KeyboardButton("🛒 PURCHASE KEY"),
         types.KeyboardButton("🔐 MY KEYS")
     )
-
     if user_id == ADMIN_ID:
         markup.add(
-            types.KeyboardButton("🔑 GENERATE KEY"),
-            types.KeyboardButton("👑 SUPER ADMIN")
+            types.KeyboardButton("🔑 GENERATE KEY")
         )
-
     markup.add(
         types.KeyboardButton("♻️ APK & SETUP"),
-        types.KeyboardButton("💬 CONTACT SUPPORT")
+        types.KeyboardButton("🔙 BACK TO PLATFORM MENU")
     )
+    return markup
 
+
+def get_ios_main_keyboard(user_id=None):
+    markup = types.ReplyKeyboardMarkup(
+        resize_keyboard=True,
+        row_width=2
+    )
+    markup.add(
+        types.KeyboardButton("🛒 PURCHASE KEY (iOS)"),
+        types.KeyboardButton("🔐 MY KEYS")
+    )
+    markup.add(
+        types.KeyboardButton("📥 DOWNLOAD LINK"),
+        types.KeyboardButton("🔙 BACK TO PLATFORM MENU")
+    )
     return markup
 
 
@@ -241,13 +284,11 @@ def get_super_admin_reply_keyboard():
     )
     markup.add(
         types.KeyboardButton("⚡ QR CODE MANAGER"),
-        types.KeyboardButton("📂 LOADER, SETUP & KEYS")
+        types.KeyboardButton("📂 ANDROID MANAGER")
     )
     markup.add(
-        types.KeyboardButton("❌ DELETE KEYS")
-    )
-    markup.add(
-        types.KeyboardButton("🔙 BACK TO MAIN MENU")
+        types.KeyboardButton("🍏 iOS MANAGER"),
+        types.KeyboardButton("🔙 BACK TO PLATFORM MENU")
     )
     return markup
 
@@ -299,26 +340,32 @@ def send_welcome(message):
     if user_id in user_states:
         del user_states[user_id]
 
+    users_collection.update_one(
+        {"user_id": user_id},
+        {"$set": {"user_id": user_id, "username": message.from_user.username, "first_name": message.from_user.first_name}},
+        upsert=True
+    )
+
     welcome_text = (
         "💎 *WELCOME TO R2F OFFICIAL PREMIUM STORE* ✅\n\n"
         "✨ *SAFE, FAST & SECURE SERVICES* 🛡️\n\n"
-        "👉 *CLICK THE MENU BUTTONS BELOW:* 👇"
+        "👉 *APNA PLATFORM SELECT KAREIN:* 👇"
     )
 
     bot.send_message(
         message.chat.id,
         welcome_text,
         parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(user_id),
+        reply_markup=get_platform_keyboard(user_id),
     )
 
 
 # ============================================================
-# BACK BUTTONS
+# PLATFORM SELECTION & BACK BUTTONS
 # ============================================================
 
-@bot.message_handler(func=lambda message: message.text in ["🔚 BACK", "🔙 BACK TO MAIN MENU"])
-def handle_back_button(message):
+@bot.message_handler(func=lambda message: message.text in ["🔙 BACK TO PLATFORM MENU", "🔚 BACK"])
+def handle_platform_back(message):
     user_id = message.from_user.id
     if is_blocked(user_id):
         return
@@ -326,19 +373,57 @@ def handle_back_button(message):
     if user_id in user_states:
         if "qr_msg_id" in user_states[user_id]:
             try:
-                bot.delete_message(
-                    message.chat.id,
-                    user_states[user_id]["qr_msg_id"]
-                )
+                bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
             except Exception:
                 pass
         del user_states[user_id]
 
     bot.send_message(
         message.chat.id,
-        "🏠 *MAIN MENU:* ✅",
+        "🏠 *MAIN PLATFORM MENU:* ✅\n\n👉 *APNA PLATFORM SELECT KAREIN:*",
         parse_mode="Markdown",
-        reply_markup=get_main_reply_keyboard(user_id),
+        reply_markup=get_platform_keyboard(user_id),
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "🤖 ANDROID")
+def handle_android_platform(message):
+    user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
+    bot.send_message(
+        message.chat.id,
+        "🤖 *ANDROID SECTION:* ✅\n\nNICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=get_android_main_keyboard(user_id),
+    )
+
+
+@bot.message_handler(func=lambda message: message.text == "🍏 iOS")
+def handle_ios_platform(message):
+    user_id = message.from_user.id
+    if is_blocked(user_id):
+        return
+    bot.send_message(
+        message.chat.id,
+        "🍏 *iOS SECTION:* ✅\n\nNICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=get_ios_main_keyboard(user_id),
+    )
+
+
+# ============================================================
+# BROADCAST FEATURE HANDLER (ADMIN)
+# ============================================================
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📢 BROADCAST")
+def broadcast_prompt(message):
+    user_states[ADMIN_ID] = {"type": "waiting_broadcast_message"}
+    bot.send_message(
+        message.chat.id,
+        "📢 *BROADCAST MESSAGE* ✅\n\n💬 Jo message (Text, Photo, Video, Document) sabhi users ko bhejna hai, woh yahan send karein:",
+        parse_mode="Markdown",
+        reply_markup=get_back_reply_keyboard()
     )
 
 
@@ -349,34 +434,23 @@ def handle_back_button(message):
 @bot.message_handler(func=lambda message: message.text == "🔑 GENERATE KEY")
 def handle_gen_key_menu(message):
     user_id = message.from_user.id
-
     if user_id != ADMIN_ID:
         return
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-
-    durations = [
-        "5 Hour",
-        "1 Day",
-        "2 Day",
-        "3 Day",
-        "7 Day",
-        "30 Day"
-    ]
-
+    durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
         markup.add(
             types.InlineKeyboardButton(
                 f"⏱ {d.upper()}",
-                callback_data=f"genkey_{cb_val}"
+                callback_data=f"genkey_android_{cb_val}"
             )
         )
 
     bot.send_message(
         message.chat.id,
-        "🔑 *GENERATE KEY* ✅\n\n"
-        "DURATION SELECT KAREIN:",
+        "🔑 *GENERATE ANDROID KEY* ✅\n\nDURATION SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -385,19 +459,18 @@ def handle_gen_key_menu(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("genkey_"))
 def handle_genkey_callback(call):
     user_id = call.from_user.id
-
     if user_id != ADMIN_ID:
         bot.answer_callback_query(call.id, "❌ UNAUTHORIZED!", show_alert=True)
         return
 
-    duration = call.data.replace("genkey_", "").replace("_", " ")
+    parts = call.data.split("_")
+    platform = parts[1]
+    duration = "_".join(parts[2:]).replace("_", " ")
     bot.answer_callback_query(call.id)
 
+    query_filter = {"platform": platform, "duration": duration, "status": "unused"}
     key_row = keys_collection.find_one_and_update(
-        {
-            "duration": duration,
-            "status": "unused"
-        },
+        query_filter,
         {
             "$set": {
                 "status": "used",
@@ -411,8 +484,7 @@ def handle_genkey_callback(call):
     if not key_row:
         bot.send_message(
             call.message.chat.id,
-            f"❌ *OUT OF STOCK!*\n"
-            f"DURATION *{duration}* KE LIYE KOI UNUSED KEY AVAILABLE NAHI HAI.",
+            f"❌ *OUT OF STOCK!*\nDURATION *{duration}* ({platform.upper()}) KE LIYE KOI UNUSED KEY AVAILABLE NAHI HAI.",
             parse_mode="Markdown"
         )
         return
@@ -422,16 +494,13 @@ def handle_genkey_callback(call):
 
     bot.send_message(
         call.message.chat.id,
-        f"✅ *KEY GENERATED SUCCESSFULLY!* ✅\n\n"
-        f"• *ID:* `{kid}`\n"
-        f"• *DURATION:* {duration} ✨\n"
-        f"• *KEY:* `{license_key}` 💎",
+        f"✅ *KEY GENERATED SUCCESSFULLY!* ✅\n\n• *PLATFORM:* {platform.upper()}\n• *ID:* `{kid}`\n• *DURATION:* {duration} ✨\n• *KEY:* `{license_key}` 💎",
         parse_mode="Markdown",
     )
 
 
 # ============================================================
-# SUPER ADMIN PANEL (REPLY KEYBOARD)
+# SUPER ADMIN PANEL & MANAGERS
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.text == "👑 SUPER ADMIN")
@@ -442,16 +511,11 @@ def super_admin_panel(message):
 
     bot.send_message(
         message.chat.id,
-        "👑 *SUPER ADMIN PANEL* ✅\n\n"
-        "NICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
+        "👑 *SUPER ADMIN PANEL* ✅\n\nNICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=get_super_admin_reply_keyboard(),
     )
 
-
-# ============================================================
-# SUPER ADMIN REPLY BUTTON HANDLERS (STREAMLINED & CLEAN)
-# ============================================================
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "⚡ QR CODE MANAGER")
 def sa_qr_manager_handler(message):
@@ -467,33 +531,36 @@ def sa_qr_manager_handler(message):
         reply_markup=markup,
     )
 
-@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📂 LOADER, SETUP & KEYS")
-def sa_loader_setup_keys_handler(message):
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📂 ANDROID MANAGER")
+def sa_android_manager_handler(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("📂 ADD / UPDATE LOADER APK", callback_data="sa_ls_loader_menu"),
-        types.InlineKeyboardButton("📺 ADD / UPDATE SETUP VIDEO", callback_data="sa_ls_video_menu"),
-        types.InlineKeyboardButton("🔑 ADD LICENSE KEYS (SINGLE & BULK)", callback_data="sa_ls_keys_menu"),
+        types.InlineKeyboardButton("📂 ADD / UPDATE ANDROID APK", callback_data="sa_ls_loader_menu"),
+        types.InlineKeyboardButton("📺 ADD / UPDATE ANDROID SETUP VIDEO", callback_data="sa_ls_video_menu"),
+        types.InlineKeyboardButton("🔑 ADD ANDROID KEYS (SINGLE & BULK)", callback_data="sa_ls_keys_menu"),
+        types.InlineKeyboardButton("🪣 DELETE ANDROID KEYS", callback_data="sa_del_android_menu"),
     )
     bot.send_message(
         message.chat.id,
-        "📂 *LOADER, SETUP & KEYS MANAGER* ✅\n\nOPTION SELECT KAREIN:",
+        "📂 *ANDROID MANAGER* ✅\n\nOPTION SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
 
-@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "❌ DELETE KEYS")
-def sa_delete_keys_handler(message):
+
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "🍏 iOS MANAGER")
+def sa_ios_manager_handler(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🗑️ DELETE SINGLE KEY", callback_data="sa_del_single_menu"),
-        types.InlineKeyboardButton("🔥 DELETE ALL KEYS", callback_data="sa_del_all_menu"),
-        types.InlineKeyboardButton("📋 PASTE & DELETE BULK KEYS", callback_data="sa_del_paste_bulk"),
-        types.InlineKeyboardButton("🗑️ DELETE ALL UNUSED KEYS", callback_data="sa_del_all_unused"),
+        types.InlineKeyboardButton("📥 ADD / UPDATE iOS DOWNLOAD LINK", callback_data="sa_ios_link_menu"),
+        types.InlineKeyboardButton("📺 ADD / UPDATE iOS SETUP VIDEO", callback_data="sa_ios_video_menu"),
+        types.InlineKeyboardButton("🔑 ADD iOS KEYS (SINGLE & BULK)", callback_data="sa_ios_keys_menu"),
+        types.InlineKeyboardButton("🪣 DELETE iOS KEYS", callback_data="sa_del_ios_menu"),
     )
     bot.send_message(
         message.chat.id,
-        "❌ *DELETE KEYS MANAGER* ✅\n\nOPTION SELECT KAREIN:",
+        "🍏 *iOS MANAGER* ✅\n\nOPTION SELECT KAREIN:",
         parse_mode="Markdown",
         reply_markup=markup,
     )
@@ -540,7 +607,7 @@ def super_admin_callbacks(call):
         )
         bot.send_message(
             call.message.chat.id,
-            "📂 *SELECT LOADER TO UPLOAD APK:* ✅",
+            "📂 *SELECT ANDROID LOADER TO UPLOAD APK:* ✅",
             parse_mode="Markdown",
             reply_markup=markup,
         )
@@ -556,7 +623,7 @@ def super_admin_callbacks(call):
         )
         bot.send_message(
             call.message.chat.id,
-            "📺 *SELECT LOADER FOR SETUP VIDEO LINK:* ✅",
+            "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:* ✅",
             parse_mode="Markdown",
             reply_markup=markup,
         )
@@ -567,87 +634,147 @@ def super_admin_callbacks(call):
         durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
         for d in durations:
             cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_keys_dur_{cb_val}"))
+            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_keys_dur_android_{cb_val}"))
         bot.send_message(
             call.message.chat.id,
-            "🔑 *ADD KEYS* ✅\n\nDURATION SELECT KAREIN:",
+            "🔑 *ADD ANDROID KEYS* ✅\n\nDURATION SELECT KAREIN:",
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+
+    elif data == "sa_ios_link_menu":
+        bot.answer_callback_query(call.id)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🍏 WIN iOS", callback_data="sa_ios_link_win_ios"),
+            types.InlineKeyboardButton("👑 KING iOS", callback_data="sa_ios_link_king_ios"),
+        )
+        bot.send_message(
+            call.message.chat.id,
+            "📥 *SELECT iOS LOADER FOR DOWNLOAD LINK:* ✅",
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+
+    elif data.startswith("sa_ios_link_"):
+        ios_key = data.replace("sa_ios_link_", "")
+        bot.answer_callback_query(call.id)
+        user_states[ADMIN_ID] = {"type": "waiting_ios_download_link", "loader_key": ios_key}
+        bot.send_message(
+            call.message.chat.id,
+            f"📥 *ADD DOWNLOAD LINK FOR {ios_key.upper().replace('_', ' ')}* ✅\n\n💬 AB APNA **DOWNLOAD LINK** YAHAN SEND KAREIN:",
+            parse_mode="Markdown",
+        )
+
+    elif data == "sa_ios_video_menu":
+        bot.answer_callback_query(call.id)
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🍏 WIN iOS", callback_data="sa_ios_v_win_ios"),
+            types.InlineKeyboardButton("👑 KING iOS", callback_data="sa_ios_v_king_ios"),
+        )
+        bot.send_message(
+            call.message.chat.id,
+            "📺 *SELECT iOS LOADER FOR SETUP VIDEO:* ✅",
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+
+    elif data.startswith("sa_ios_v_"):
+        ios_key = data.replace("sa_ios_v_", "")
+        bot.answer_callback_query(call.id)
+        user_states[ADMIN_ID] = {"type": "waiting_ios_video_link", "loader_key": ios_key}
+        bot.send_message(
+            call.message.chat.id,
+            f"📺 *ADD SETUP VIDEO LINK FOR {ios_key.upper().replace('_', ' ')}* ✅\n\n💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:",
+            parse_mode="Markdown",
+        )
+
+    elif data == "sa_ios_keys_menu":
+        bot.answer_callback_query(call.id)
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        durations = ["1 Day", "7 Day", "30 Day"]
+        for d in durations:
+            cb_val = d.replace(" ", "_")
+            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_keys_dur_ios_{cb_val}"))
+        bot.send_message(
+            call.message.chat.id,
+            "🔑 *ADD iOS KEYS* ✅\n\nDURATION SELECT KAREIN:",
             parse_mode="Markdown",
             reply_markup=markup,
         )
 
     elif data.startswith("sa_keys_dur_"):
-        duration = data.replace("sa_keys_dur_", "").replace("_", " ")
+        parts = data.replace("sa_keys_dur_", "").split("_", 1)
+        platform = parts[0]
+        duration = parts[1].replace("_", " ")
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=2)
         cb_dur = duration.replace(" ", "_")
         markup.add(
-            types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data=f"sa_add_s_{cb_dur}"),
-            types.InlineKeyboardButton("📦 ADD BULK KEYS", callback_data=f"sa_add_b_{cb_dur}")
+            types.InlineKeyboardButton("➕ ADD SINGLE KEY", callback_data=f"sa_add_s_{platform}_{cb_dur}"),
+            types.InlineKeyboardButton("📦 ADD BULK KEYS", callback_data=f"sa_add_b_{platform}_{cb_dur}")
         )
         bot.send_message(
             call.message.chat.id,
-            f"⏱ DURATION: *{duration}*\n\nKAUNSA METHOD USE KARNA HAI SELECT KAREIN:",
+            f"⏱ PLATFORM: *{platform.upper()}* | DURATION: *{duration}*\n\nKAUNSA METHOD USE KARNA HAI SELECT KAREIN:",
             parse_mode="Markdown",
             reply_markup=markup
         )
 
     elif data.startswith("sa_add_s_"):
-        duration = data.replace("sa_add_s_", "").replace("_", " ")
+        parts = data.replace("sa_add_s_", "").split("_", 1)
+        platform = parts[0]
+        duration = parts[1].replace("_", " ")
         bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_single_key", "duration": duration}
+        user_states[ADMIN_ID] = {"type": "waiting_single_key", "platform": platform, "duration": duration}
         bot.send_message(
             call.message.chat.id,
-            f"➕ *ADD SINGLE KEY* ✅\n\nDURATION: *{duration}*\n\n💬 APNI **LICENSE KEY** YAHAN CHAT MEIN SEND KAREIN:",
+            f"➕ *ADD SINGLE KEY ({platform.upper()})* ✅\n\nDURATION: *{duration}*\n\n💬 APNI **LICENSE KEY** YAHAN CHAT MEIN SEND KAREIN:",
             parse_mode="Markdown",
         )
 
     elif data.startswith("sa_add_b_"):
-        duration = data.replace("sa_add_b_", "").replace("_", " ")
+        parts = data.replace("sa_add_b_", "").split("_", 1)
+        platform = parts[0]
+        duration = parts[1].replace("_", " ")
         bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "duration": duration}
+        user_states[ADMIN_ID] = {"type": "waiting_bulk_keys", "platform": platform, "duration": duration}
         bot.send_message(
             call.message.chat.id,
-            f"📦 *ADD BULK KEYS* ✅\n\nDURATION: *{duration}*\n\n💬 MULTIPLE KEYS **EK LINE MEIN EK KEY** KARKE YAHAN PASTE/SEND KAREIN:",
+            f"📦 *ADD BULK KEYS ({platform.upper()})* ✅\n\nDURATION: *{duration}*\n\n💬 MULTIPLE KEYS **EK LINE MEIN EK KEY** KARKE YAHAN PASTE/SEND KAREIN:",
             parse_mode="Markdown",
         )
 
-    elif data == "sa_del_single_menu":
+    elif data == "sa_del_android_menu":
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=2)
         durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
         for d in durations:
             cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_delsingle_dur_{cb_val}"))
-        bot.send_message(
-            call.message.chat.id,
-            "🗑️ *DELETE SINGLE KEY* ✅\n\nDURATION SELECT KAREIN:",
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
+            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_del_dur_android_{cb_val}"))
+        bot.send_message(call.message.chat.id, "🪣 *DELETE ANDROID KEYS* ✅\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
 
-    elif data == "sa_del_all_menu":
+    elif data == "sa_del_ios_menu":
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup(row_width=2)
-        durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+        durations = ["1 Day", "7 Day", "30 Day"]
         for d in durations:
             cb_val = d.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(f"🔥 DELETE ALL ({d.upper()})", callback_data=f"sa_delall_dur_{cb_val}"))
-        bot.send_message(
-            call.message.chat.id,
-            "🔥 *DELETE ALL KEYS BY DURATION* ✅\n\nDURATION SELECT KAREIN:",
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
+            markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"sa_del_dur_ios_{cb_val}"))
+        bot.send_message(call.message.chat.id, "🪣 *DELETE iOS KEYS* ✅\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
 
-    elif data.startswith("sa_delsingle_dur_"):
-        duration = data.replace("sa_delsingle_dur_", "").replace("_", " ")
+    elif data.startswith("sa_del_dur_"):
+        parts = data.replace("sa_del_dur_", "").split("_", 1)
+        platform = parts[0]
+        duration = parts[1].replace("_", " ")
         bot.answer_callback_query(call.id)
-        keys = list(keys_collection.find({"duration": duration}, {"id": 1, "license_key": 1}).sort("id", DESCENDING))
+        keys = list(keys_collection.find({"platform": platform, "duration": duration}, {"id": 1, "license_key": 1}).sort("id", DESCENDING))
         if not keys:
-            bot.send_message(call.message.chat.id, f"❌ DURATION *{duration}* KE LIYE KOI KEYS AVAILABLE NAHI HAIN.", parse_mode="Markdown")
+            bot.send_message(call.message.chat.id, f"❌ DURATION *{duration}* ({platform.upper()}) KE LIYE KOI KEYS AVAILABLE NAHI HAIN.", parse_mode="Markdown")
             return
 
-        text = f"🗑️ *DELETE SINGLE KEYS ({duration.upper()}):* ✅\n\n"
+        text = f"🪣 *DELETE KEYS FOR {platform.upper()} ({duration.upper()}):* ✅\n\n"
         markup = types.InlineKeyboardMarkup(row_width=1)
         for idx, key in enumerate(keys, 1):
             kid = key["id"]
@@ -656,73 +783,20 @@ def super_admin_callbacks(call):
             markup.add(types.InlineKeyboardButton(f"🗑️ DELETE #{idx} (`{l_key}`)", callback_data=f"sa_del_id_{kid}"))
 
         if len(text) > 4000:
-            text = text[:4000] + "\n\n*(List truncated due to length)*"
-
+            text = text[:4000] + "\n\n*(List truncated)*"
         bot.send_message(call.message.chat.id, text, parse_mode="Markdown", reply_markup=markup)
-
-    elif data.startswith("sa_delall_dur_"):
-        duration = data.replace("sa_delall_dur_", "").replace("_", " ")
-        bot.answer_callback_query(call.id)
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        cb_val = duration.replace(" ", "_")
-        markup.add(types.InlineKeyboardButton(f"⚠️ YES, DELETE ALL {duration.upper()} KEYS NOW!", callback_data=f"sa_confirm_alldur_{cb_val}"))
-        
-        bot.send_message(
-            call.message.chat.id,
-            f"⚠️ *WARNING:* Kya aap sach mein duration *{duration}* ki **saari keys** delete karna chahte hain?",
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
-
-    elif data.startswith("sa_confirm_alldur_"):
-        duration = data.replace("sa_confirm_alldur_", "").replace("_", " ")
-        bot.answer_callback_query(call.id)
-        result = keys_collection.delete_many({"duration": duration})
-        bot.send_message(
-            call.message.chat.id,
-            f"✅ *DURATION ({duration.upper()}) KI SAARI KEYS SUCCESSFULLY DELETE HO GAYI HAIN!* ✅\n\nTOTAL DELETED: `{result.deleted_count}`",
-            parse_mode="Markdown",
-        )
 
     elif data.startswith("sa_ldr_"):
         loader_key = data.replace("sa_ldr_", "")
         bot.answer_callback_query(call.id)
         user_states[ADMIN_ID] = {"type": "waiting_loader_apk", "loader_key": loader_key}
-        bot.send_message(
-            call.message.chat.id,
-            f"📂 *UPLOAD APK FOR {loader_key.upper().replace('_', ' ')}* ✅\n\n"
-            "💬 AB APNI **APK FILE (.apk)** YAHAN CHAT MEIN SEND KAREIN:",
-            parse_mode="Markdown",
-        )
+        bot.send_message(call.message.chat.id, f"📂 *UPLOAD APK FOR {loader_key.upper().replace('_', ' ')}* ✅\n\n💬 AB APNI **APK FILE (.apk)** YAHAN CHAT MEIN SEND KAREIN:", parse_mode="Markdown")
 
     elif data.startswith("sa_vldr_"):
         loader_key = data.replace("sa_vldr_", "")
         bot.answer_callback_query(call.id)
         user_states[ADMIN_ID] = {"type": "waiting_loader_video", "loader_key": loader_key}
-        bot.send_message(
-            call.message.chat.id,
-            f"📺 *ADD SETUP VIDEO LINK FOR {loader_key.upper().replace('_', ' ')}* ✅\n\n"
-            "💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:",
-            parse_mode="Markdown",
-        )
-
-    elif data == "sa_del_paste_bulk":
-        bot.answer_callback_query(call.id)
-        user_states[ADMIN_ID] = {"type": "waiting_bulk_del"}
-        bot.send_message(
-            call.message.chat.id,
-            "🗑 *DELETE BULK KEYS BY LIST* ✅\n\n💬 JIN KEYS KO DELETE KARNA HAI UNHE **EK LINE MEIN EK KEY** KARKE YAHAN SEND KAREIN:",
-            parse_mode="Markdown",
-        )
-
-    elif data == "sa_del_all_unused":
-        bot.answer_callback_query(call.id)
-        result = keys_collection.delete_many({"status": "unused"})
-        bot.send_message(
-            call.message.chat.id,
-            f"✅ SAARI UNUSED KEYS SUCCESSFULLY DELETE KAR DI GAYI HAIN! ✅\n\nTOTAL DELETED: `{result.deleted_count}`",
-            parse_mode="Markdown",
-        )
+        bot.send_message(call.message.chat.id, f"📺 *ADD SETUP VIDEO LINK FOR {loader_key.upper().replace('_', ' ')}* ✅\n\n💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:", parse_mode="Markdown")
 
     elif data.startswith("sa_del_id_"):
         kid = int(data.split("_")[3])
@@ -732,7 +806,7 @@ def super_admin_callbacks(call):
             if result.deleted_count:
                 bot.edit_message_text(f"✅ *KEY SUCCESSFULLY DELETED!* ✅", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
             else:
-                bot.edit_message_text(f"❌ *KEY ALREADY DELETED OR NOT FOUND!*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+                bot.edit_message_text(f"❌ *KEY ALREADY DELETED!*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
         except Exception:
             pass
 
@@ -746,24 +820,63 @@ def super_admin_callbacks(call):
         message.from_user.id == ADMIN_ID
         and message.from_user.id in user_states
         and user_states[message.from_user.id]["type"]
-        in ["waiting_single_key", "waiting_bulk_keys", "waiting_del_id", "waiting_bulk_del", "waiting_loader_apk", "waiting_loader_video", "waiting_upi_qr_photo", "waiting_custom_qr_amount"],
-    content_types=["text", "document", "photo"]
+        in ["waiting_single_key", "waiting_bulk_keys", "waiting_loader_apk", "waiting_loader_video", "waiting_ios_download_link", "waiting_ios_video_link", "waiting_upi_qr_photo", "waiting_custom_qr_amount", "waiting_broadcast_message"],
+    content_types=["text", "document", "photo", "video", "audio", "voice"]
 )
 def handle_admin_state_input(message):
     user_id = message.from_user.id
     state = user_states[user_id]
     action_type = state["type"]
 
+    if action_type == "waiting_broadcast_message":
+        text = (message.text or "").strip()
+        if text in ["🔚 BACK", "🔙 BACK TO PLATFORM MENU"]:
+            del user_states[ADMIN_ID]
+            handle_platform_back(message)
+            return
+
+        del user_states[ADMIN_ID]
+
+        users = list(users_collection.find({}, {"user_id": 1}))
+        total_users = len(users)
+
+        if total_users == 0:
+            bot.reply_to(message, "❌ Database mein koi users nahi mile!")
+            return
+
+        sent_count = 0
+        fail_count = 0
+
+        status_msg = bot.send_message(message.chat.id, f"📢 Broadcast started for `{total_users}` users...", parse_mode="Markdown")
+
+        for u in users:
+            uid = u["user_id"]
+            if uid == ADMIN_ID:
+                continue
+            try:
+                bot.copy_message(chat_id=uid, from_chat_id=message.chat.id, message_id=message.id)
+                sent_count += 1
+                time.sleep(0.04)
+            except Exception:
+                fail_count += 1
+
+        bot.edit_message_text(
+            f"✅ *BROADCAST COMPLETED!* ✅\n\n"
+            f"• *Total Users:* `{total_users}`\n"
+            f"• *Successfully Sent:* `{sent_count}`\n"
+            f"• *Failed / Blocked:* `{fail_count}`",
+            chat_id=message.chat.id,
+            message_id=status_msg.message_id,
+            parse_mode="Markdown"
+        )
+        return
+
     if action_type == "waiting_upi_qr_photo":
         if not message.photo:
             bot.reply_to(message, "❌ KRIPYA EK VALID QR IMAGE PHOTO SEND KAREIN!")
             return
         file_id = message.photo[-1].file_id
-        loaders_collection.update_one(
-            {"loader_key": "static_upi_qr"},
-            {"$set": {"file_id": file_id}},
-            upsert=True
-        )
+        loaders_collection.update_one({"loader_key": "static_upi_qr"}, {"$set": {"file_id": file_id}}, upsert=True)
         del user_states[user_id]
         bot.reply_to(message, "✅ *STATIC UPI QR SUCCESSFULLY SAVED!* ✅", parse_mode="Markdown")
         return
@@ -776,15 +889,9 @@ def handle_admin_state_input(message):
             unique_tr = f"R2FCUST{int(time.time())}"
             upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
             qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
-            
-            bot.send_photo(
-                message.chat.id,
-                photo=qr_api_url,
-                caption=f"🎨 *CUSTOM PAYMENT QR* ✅\n\n• *AMOUNT:* ₹{amount}\n• *UPI ID:* `{UPI_ID}`",
-                parse_mode="Markdown"
-            )
+            bot.send_photo(message.chat.id, photo=qr_api_url, caption=f"🎨 *CUSTOM PAYMENT QR* ✅\n\n• *AMOUNT:* ₹{amount}\n• *UPI ID:* `{UPI_ID}`", parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, "❌ KRIPYA SAHI AMOUNT (SIRF NUMBER) ENTER KAREIN!")
+            bot.reply_to(message, "❌ KRIPYA SAHI AMOUNT ENTER KAREIN!")
         return
 
     if action_type == "waiting_loader_apk":
@@ -792,84 +899,67 @@ def handle_admin_state_input(message):
         if not message.document:
             bot.reply_to(message, "❌ KRIPYA EK VALID APK DOCUMENT FILE SEND KAREIN!")
             return
-
         file_id = message.document.file_id
         file_name = message.document.file_name or "app.apk"
-
-        loaders_collection.update_one(
-            {"loader_key": loader_key},
-            {"$set": {"file_id": file_id, "file_name": file_name}},
-            upsert=True
-        )
-
+        loaders_collection.update_one({"loader_key": loader_key}, {"$set": {"file_id": file_id, "file_name": file_name}}, upsert=True)
         del user_states[user_id]
-        bot.reply_to(
-            message,
-            f"✅ *APK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n"
-            f"• *File Name:* `{file_name}`",
-            parse_mode="Markdown"
-        )
+        bot.reply_to(message, f"✅ *APK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n• *File Name:* `{file_name}`", parse_mode="Markdown")
         return
 
     if action_type == "waiting_loader_video":
         loader_key = state["loader_key"]
         video_link = (message.text or "").strip()
-
         if not video_link:
             bot.reply_to(message, "❌ KRIPYA VALID VIDEO LINK SEND KAREIN!")
             return
-
-        loaders_collection.update_one(
-            {"loader_key": loader_key},
-            {"$set": {"video_link": video_link}},
-            upsert=True
-        )
-
+        loaders_collection.update_one({"loader_key": loader_key}, {"$set": {"video_link": video_link}}, upsert=True)
         del user_states[user_id]
-        bot.reply_to(
-            message,
-            f"✅ *SETUP VIDEO LINK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n"
-            f"• *Link:* `{video_link}`",
-            parse_mode="Markdown"
-        )
+        bot.reply_to(message, f"✅ *SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n• *Link:* `{video_link}`", parse_mode="Markdown")
+        return
+
+    if action_type == "waiting_ios_download_link":
+        loader_key = state["loader_key"]
+        download_link = (message.text or "").strip()
+        if not download_link:
+            bot.reply_to(message, "❌ KRIPYA VALID DOWNLOAD LINK SEND KAREIN!")
+            return
+        loaders_collection.update_one({"loader_key": f"ios_{loader_key}"}, {"$set": {"download_link": download_link}}, upsert=True)
+        del user_states[user_id]
+        bot.reply_to(message, f"✅ *iOS DOWNLOAD LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n• *Link:* `{download_link}`", parse_mode="Markdown")
+        return
+
+    if action_type == "waiting_ios_video_link":
+        loader_key = state["loader_key"]
+        video_link = (message.text or "").strip()
+        if not video_link:
+            bot.reply_to(message, "❌ KRIPYA VALID VIDEO LINK SEND KAREIN!")
+            return
+        loaders_collection.update_one({"loader_key": f"ios_{loader_key}"}, {"$set": {"video_link": video_link}}, upsert=True)
+        del user_states[user_id]
+        bot.reply_to(message, f"✅ *iOS SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!* ✅\n\n• *Link:* `{video_link}`", parse_mode="Markdown")
         return
 
     text = (message.text or "").strip()
-
-    if text.startswith("/") or text in [
-        "🛒 PURCHASE KEY",
-        "🔐 MY KEYS",
-        "🔑 GENERATE KEY",
-        "♻️ APK & SETUP",
-        "💬 CONTACT SUPPORT",
-        "🔚 BACK",
-        "👑 SUPER ADMIN",
-    ]:
+    if text.startswith("/") or text in ["🤖 ANDROID", "🍏 iOS", "👑 SUPER ADMIN", "📢 BROADCAST", "💬 CONTACT SUPPORT", "🔚 BACK"]:
         del user_states[user_id]
-        if text == "👑 SUPER ADMIN":
-            super_admin_panel(message)
-        elif text == "🔑 GENERATE KEY":
-            handle_gen_key_menu(message)
-        elif text in ["🔚 BACK", "🔙 BACK TO MAIN MENU"]:
-            handle_back_button(message)
-        else:
-            handle_reply_menu(message)
         return
 
     if action_type == "waiting_single_key":
         duration = state["duration"]
+        platform = state.get("platform", "android")
         try:
             new_id = get_next_id("keys")
-            keys_collection.insert_one({"id": new_id, "duration": duration, "license_key": text, "status": "unused", "assigned_to": None})
+            keys_collection.insert_one({"id": new_id, "platform": platform, "duration": duration, "license_key": text, "status": "unused", "assigned_to": None})
             del user_states[user_id]
-            bot.reply_to(message, f"✅ *SINGLE KEY ADDED SUCCESSFULLY!* ✅\n\n• *DURATION:* {duration}\n• *KEY:* `{text}`", parse_mode="Markdown")
+            bot.reply_to(message, f"✅ *SINGLE KEY ADDED ({platform.upper()})!* ✅\n\n• *DURATION:* {duration}\n• *KEY:* `{text}`", parse_mode="Markdown")
         except DuplicateKeyError:
             bot.reply_to(message, "❌ *DUPLICATE KEY ERROR!*\nYEH LICENSE KEY PEHLE SE DATABASE MEIN MOJOOD HAI.", parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, "❌ KEY ADD KARTE WAQT DATABASE ERROR AA GAYA.")
+            bot.reply_to(message, "❌ KEY ADD KARTE WAQT ERROR AAYA.")
 
     elif action_type == "waiting_bulk_keys":
         duration = state["duration"]
+        platform = state.get("platform", "android")
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         if not lines:
             bot.reply_to(message, "❌ KOI KEYS NAHI MILI!")
@@ -879,31 +969,17 @@ def handle_admin_state_input(message):
         for key in lines:
             try:
                 new_id = get_next_id("keys")
-                keys_collection.insert_one({"id": new_id, "duration": duration, "license_key": key, "status": "unused", "assigned_to": None})
+                keys_collection.insert_one({"id": new_id, "platform": platform, "duration": duration, "license_key": key, "status": "unused", "assigned_to": None})
                 added_count += 1
             except DuplicateKeyError:
                 duplicate_count += 1
 
         del user_states[user_id]
-        bot.reply_to(message, f"📦 *BULK KEYS ADDED REPORT* ✅\n\n• *DURATION:* {duration}\n• *SUCCESSFULLY ADDED:* `{added_count}`\n• *DUPLICATES SKIPPED:* `{duplicate_count}`", parse_mode="Markdown")
-
-    elif action_type == "waiting_bulk_del":
-        lines = [line.strip() for line in text.split("\n") if line.strip()]
-        if not lines:
-            bot.reply_to(message, "❌ KOI KEYS NAHI MILI!")
-            return
-
-        deleted_count = 0
-        for key in lines:
-            result = keys_collection.delete_one({"license_key": key})
-            deleted_count += result.deleted_count
-
-        del user_states[user_id]
-        bot.reply_to(message, f"🗑️ *BULK DELETE REPORT* ✅\n\n• *TOTAL KEYS DELETED:* `{deleted_count}`", parse_mode="Markdown")
+        bot.reply_to(message, f"📦 *BULK KEYS REPORT ({platform.upper()})* ✅\n\n• *DURATION:* {duration}\n• *ADDED:* `{added_count}`\n• *DUPLICATES SKIPPED:* `{duplicate_count}`", parse_mode="Markdown")
 
 
 # ============================================================
-# REPLY MENU
+# REPLY MENUS (ANDROID & iOS)
 # ============================================================
 
 @bot.message_handler(
@@ -913,6 +989,8 @@ def handle_admin_state_input(message):
             "🔐 MY KEYS",
             "♻️ APK & SETUP",
             "💬 CONTACT SUPPORT",
+            "🛒 PURCHASE KEY (iOS)",
+            "📥 DOWNLOAD LINK"
         ]
 )
 def handle_reply_menu(message):
@@ -923,7 +1001,9 @@ def handle_reply_menu(message):
     if user_id in user_states:
         del user_states[user_id]
 
-    if message.text == "🛒 PURCHASE KEY":
+    text = message.text
+
+    if text == "🛒 PURCHASE KEY":
         markup = types.InlineKeyboardMarkup(row_width=2)
         plans = [
             ("⏱ 5 HOUR - ₹30", "5 Hour", 30),
@@ -933,28 +1013,23 @@ def handle_reply_menu(message):
             ("⏱ 7 DAY - ₹399", "7 Day", 399),
             ("⏱ 30 DAY - ₹799", "30 Day", 799),
         ]
-
         for title, duration, amount in plans:
-            stock_count = keys_collection.count_documents({"duration": duration, "status": "unused"})
+            stock_count = keys_collection.count_documents({"platform": "android", "duration": duration, "status": "unused"})
             button_title = f"{title} | STOCK: {stock_count}"
             cb_duration = duration.replace(" ", "_")
-            markup.add(types.InlineKeyboardButton(button_title, callback_data=f"plan_{cb_duration}_{amount}"))
+            markup.add(types.InlineKeyboardButton(button_title, callback_data=f"plan_android_{cb_duration}_{amount}"))
 
-        bot.send_message(
-            message.chat.id,
-            "📋 *SELECT PLAN* ✅\n\nAPNA PLAN SELECT KAREIN:",
-            parse_mode="Markdown",
-            reply_markup=markup,
+        bot.send_message(message.chat.id, "📋 *SELECT ANDROID PLAN* ✅\n\nAPNA PLAN SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
+
+    elif text == "🛒 PURCHASE KEY (iOS)":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🍏 WIN iOS", callback_data="ios_plan_win_ios"),
+            types.InlineKeyboardButton("👑 KING iOS", callback_data="ios_plan_king_ios")
         )
+        bot.send_message(message.chat.id, "🍏 *SELECT iOS LOADER* ✅\n\nKIS LOADER KE LIYE KEY CHAHIYE SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
 
-        bot.send_message(
-            message.chat.id,
-            "👇 *BACK:*",
-            parse_mode="Markdown",
-            reply_markup=get_back_reply_keyboard(),
-        )
-
-    elif message.text == "🔐 MY KEYS":
+    elif text == "🔐 MY KEYS":
         current_time = time.time()
         all_keys = list(keys_collection.find({"status": "used", "assigned_to": user_id}))
         
@@ -963,8 +1038,6 @@ def handle_reply_menu(message):
             duration = key.get("duration", "1 Day")
             assigned_at = key.get("assigned_at", current_time)
             duration_secs = parse_duration_seconds(duration)
-            
-            # Check if expired
             if current_time - (assigned_at or current_time) > duration_secs:
                 keys_collection.delete_one({"id": key["id"]})
             else:
@@ -976,6 +1049,7 @@ def handle_reply_menu(message):
 
         for key in valid_keys:
             key_id = key["id"]
+            platform = key.get("platform", "android").upper()
             duration = key["duration"]
             license_key = key["license_key"]
             assigned_at = key.get("assigned_at", current_time)
@@ -989,14 +1063,12 @@ def handle_reply_menu(message):
 
             bot.send_message(
                 message.chat.id,
-                f"💎 *PLAN:* {duration} ✅\n"
-                f"📅 *DATE:* {date_str}\n"
-                f"🔑 `{license_key}`",
+                f"💎 *PLATFORM:* {platform} | *PLAN:* {duration} ✅\n📅 *DATE:* {date_str}\n🔑 `{license_key}`",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
 
-    elif message.text == "♻️ APK & SETUP":
+    elif text == "♻️ APK & SETUP":
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("⚙️ VOLTAGE LOADER", callback_data="setup_voltage_loader"),
@@ -1004,26 +1076,82 @@ def handle_reply_menu(message):
             types.InlineKeyboardButton("💎 NICE X NEXA", callback_data="setup_nicexnexa"),
             types.InlineKeyboardButton("⚡ NICE X NEXA SERVER", callback_data="setup_nicexnexaserver"),
         )
-        bot.send_message(
-            message.chat.id,
-            "♻ *SELECT LOADER/SERVER FOR SETUP & APK:* ✅",
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
+        bot.send_message(message.chat.id, "♻ *SELECT LOADER/SERVER FOR SETUP & APK:* ✅", parse_mode="Markdown", reply_markup=markup)
 
-    elif message.text == "💬 CONTACT SUPPORT":
+    elif text == "📥 DOWNLOAD LINK":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🍏 WIN iOS", callback_data="download_ios_win_ios"),
+            types.InlineKeyboardButton("👑 KING iOS", callback_data="download_ios_king_ios"),
+        )
+        bot.send_message(message.chat.id, "📥 *SELECT iOS LOADER FOR DOWNLOAD LINK:* ✅", parse_mode="Markdown", reply_markup=markup)
+
+    elif text == "💬 CONTACT SUPPORT":
         user_states[user_id] = {"type": "support"}
         bot.send_message(
             message.chat.id,
-            "💬 *WELCOME TO SUPPORT CHAT!* ✅\n\n"
-            "APNA MESSAGE YAHAN SEND KAREIN, ADMIN AAPKO JALD REPLY KAREGA.",
+            "💬 *WELCOME TO SUPPORT CHAT!* ✅\n\nAPNA MESSAGE YAHAN SEND KAREIN, ADMIN AAPKO JALD REPLY KAREGA.",
             parse_mode="Markdown",
             reply_markup=get_support_reply_keyboard(),
         )
 
 
 # ============================================================
-# SETUP CALLBACKS
+# iOS PLANS & DOWNLOAD CALLBACKS
+# ============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("ios_plan_"))
+def handle_ios_plan_selection(call):
+    if is_blocked(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    loader_type = call.data.replace("ios_plan_", "")
+    loader_title = loader_type.upper().replace("_", " ")
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    ios_plans = [
+        ("⏱ 1 DAY - ₹150", "1 Day", 150),
+        ("⏱ 7 DAY - ₹899", "7 Day", 899),
+        ("⏱ 30 DAY - ₹1599", "30 Day", 1599),
+    ]
+    for title, duration, amount in ios_plans:
+        stock_count = keys_collection.count_documents({"platform": "ios", "duration": duration, "status": "unused"})
+        btn_text = f"{title} | STOCK: {stock_count}"
+        cb_dur = duration.replace(" ", "_")
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"plan_ios_{cb_dur}_{amount}"))
+
+    bot.send_message(call.message.chat.id, f"🍏 *SELECT PLAN FOR {loader_title}* ✅\n\nAPNA PLAN SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("download_ios_"))
+def handle_ios_download_callback(call):
+    if is_blocked(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ You are blocked!", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    loader_key = call.data.replace("download_ios_", "")
+    doc_key = f"ios_{loader_key}"
+
+    loader_doc = loaders_collection.find_one({"loader_key": doc_key})
+    download_link = loader_doc.get("download_link", f"https://t.me/{OWNER_USERNAME}") if loader_doc else f"https://t.me/{OWNER_USERNAME}"
+    video_link = loader_doc.get("video_link", f"https://t.me/{OWNER_USERNAME}") if loader_doc else f"https://t.me/{OWNER_USERNAME}"
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📥 DOWNLOAD APP", url=download_link),
+        types.InlineKeyboardButton("📺 WATCH SETUP VIDEO", url=video_link)
+    )
+    bot.send_message(
+        call.message.chat.id,
+        f"🍏 *HERE IS YOUR DOWNLOAD LINK FOR {loader_key.upper().replace('_', ' ')}* ✅\n\nNICHE DIYE GAYE BUTTON SE APP DOWNLOAD KAREIN AUR SETUP VIDEO DEHEIN:",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+
+# ============================================================
+# SETUP CALLBACKS (ANDROID)
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setup_"))
@@ -1036,7 +1164,7 @@ def handle_setup_callbacks(call):
     key = call.data.replace("setup_", "")
 
     loader_doc = loaders_collection.find_one({"loader_key": key})
-    video_link = loader_doc.get("video_link", "https://t.me/VoltageLoader") if loader_doc else "https://t.me/VoltageLoader"
+    video_link = loader_doc.get("video_link", f"https://t.me/{OWNER_USERNAME}") if loader_doc else f"https://t.me/{OWNER_USERNAME}"
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -1049,27 +1177,14 @@ def handle_setup_callbacks(call):
             bot.send_document(
                 call.message.chat.id,
                 document=file_id,
-                caption=(
-                    f"📁 *HERE IS YOUR APK FOR {key.upper().replace('_', ' ')}* ✅\n\n"
-                    f"NICHE DIYE GAYE BUTTON SE SETUP VIDEO DEHEIN:"
-                ),
+                caption=f"📁 *HERE IS YOUR APK FOR {key.upper().replace('_', ' ')}* ✅\n\nNICHE DIYE GAYE BUTTON SE SETUP VIDEO DEHEIN:",
                 parse_mode="Markdown",
                 reply_markup=markup
             )
         except Exception:
-            bot.send_message(
-                call.message.chat.id,
-                f"❌ APK SEND KARNE MEIN ERROR AAYA.\n\n📺 WATCH SETUP VIDEO LINK:",
-                parse_mode="Markdown",
-                reply_markup=markup
-            )
+            bot.send_message(call.message.chat.id, f"❌ APK SEND KARNE MEIN ERROR AAYA.\n\n📺 WATCH SETUP VIDEO LINK:", parse_mode="Markdown", reply_markup=markup)
     else:
-        bot.send_message(
-            call.message.chat.id,
-            f"❌ *APK NOT AVAILABLE YET!*\n\n📺 WATCH SETUP VIDEO LINK:",
-            parse_mode="Markdown",
-            reply_markup=markup
-        )
+        bot.send_message(call.message.chat.id, f"❌ *APK NOT AVAILABLE YET!*\n\n📺 WATCH SETUP VIDEO LINK:", parse_mode="Markdown", reply_markup=markup)
 
 
 # ============================================================
@@ -1097,23 +1212,18 @@ def handle_support_chat_messages(message):
             message.chat.id,
             "🏠 *MAIN MENU:* ✅",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(user_id),
+            reply_markup=get_platform_keyboard(user_id),
         )
         return
 
     if text == "📞 CONTACT OWNER":
         markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton(
-                "💬 OPEN OWNER DM",
-                url=f"https://t.me/{OWNER_USERNAME}"
-            )
-        )
+        markup.add(types.InlineKeyboardButton("💬 OPEN OWNER DM", url=f"https://t.me/{OWNER_USERNAME}"))
         bot.send_message(
             message.chat.id,
-            "💬 *CLICK THE BUTTON BELOW TO OPEN OWNER DM DIRECTLY:* ✅",
+            f"💬 *CLICK THE BUTTON BELOW TO OPEN OWNER DM DIRECTLY:* ✅\n\n👉 Telegram: https://t.me/{OWNER_USERNAME}",
             parse_mode="Markdown",
-            reply_markup=markup,
+            reply_markup=markup
         )
         return
 
@@ -1149,7 +1259,7 @@ def handle_delete_my_key(call):
 
 
 # ============================================================
-# HANDLE PLAN (PURCHASE)
+# HANDLE PLAN (PURCHASE) - ANDROID & iOS
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
@@ -1161,18 +1271,19 @@ def handle_plan(call):
 
     bot.answer_callback_query(call.id)
     parts = call.data.split("_")
+    platform = parts[1] # android or ios
     amount = int(parts[-1])
-    duration = "_".join(parts[1:-1]).replace("_", " ")
+    duration = "_".join(parts[2:-1]).replace("_", " ")
     current_time = time.time()
 
     order_id = get_next_id("orders")
-    orders_collection.insert_one({"id": order_id, "user_id": user_id, "duration": duration, "amount": amount, "created_at": current_time, "status": "pending"})
+    orders_collection.insert_one({"id": order_id, "user_id": user_id, "platform": platform, "duration": duration, "amount": amount, "created_at": current_time, "status": "pending"})
 
-    # Check if admin uploaded a static UPI QR code image
     static_qr_doc = loaders_collection.find_one({"loader_key": "static_upi_qr"})
 
     caption_text = (
         "💳 *SCAN & PAY* ✅\n\n"
+        f"• *PLATFORM:* {platform.upper()}\n"
         f"• *PLAN:* {duration}\n"
         f"• *AMOUNT:* ₹{amount} (AUTO-FILLED)\n\n"
         "⚠️ *IMPORTANT INSTRUCTIONS*\n\n"
@@ -1204,6 +1315,7 @@ def handle_plan(call):
     user_states[user_id] = {
         "type": "plan",
         "order_id": order_id,
+        "platform": platform,
         "duration": duration,
         "amount": amount,
         "timestamp": current_time,
@@ -1240,22 +1352,13 @@ def handle_user_payment_input(message):
             handle_cancel_button(message)
             return
 
-        if any(menu_item in text.upper() for menu_item in ["🛒 PURCHASE KEY", "🔐 MY KEYS", "🔑 GENERATE KEY", "♻️ APK & SETUP", "💬 CONTACT SUPPORT", "🔚 BACK", "👑 SUPER ADMIN"]) or text.startswith("/"):
+        if any(menu_item in text.upper() for menu_item in ["🤖 ANDROID", "🍏 iOS", "👑 SUPER ADMIN", "📢 BROADCAST", "💬 CONTACT SUPPORT", "🔚 BACK"]) or text.startswith("/"):
             if user_id in user_states and "qr_msg_id" in user_states[user_id]:
                 try:
                     bot.delete_message(message.chat.id, user_states[user_id]["qr_msg_id"])
                 except Exception:
                     pass
             del user_states[user_id]
-
-            if "BACK" in text.upper():
-                handle_back_button(message)
-            elif "SUPER ADMIN" in text.upper():
-                super_admin_panel(message)
-            elif "GENERATE KEY" in text.upper():
-                handle_gen_key_menu(message)
-            else:
-                handle_reply_menu(message)
             return
 
         bot.reply_to(message, "❌ KRIPYA TEXT KI JAGAH APNA **PAYMENT SCREENSHOT** BHEIN!", reply_markup=get_payment_reply_keyboard())
@@ -1263,6 +1366,7 @@ def handle_user_payment_input(message):
 
     if message.photo:
         order_id = state["order_id"]
+        platform = state["platform"]
         duration = state["duration"]
         amount = state["amount"]
 
@@ -1280,7 +1384,7 @@ def handle_user_payment_input(message):
             message,
             "⏳ *SCREENSHOT SUBMITTED SUCCESSFULLY!* ✅\nAAPKA SCREENSHOT ADMIN KE PAAS VERIFICATION KE LIYE BHEJ DIYA GAYA HAI.",
             parse_mode="Markdown",
-            reply_markup=get_main_reply_keyboard(user_id),
+            reply_markup=get_platform_keyboard(user_id),
         )
 
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -1297,6 +1401,7 @@ def handle_user_payment_input(message):
             f"🔔 *NEW PAYMENT SCREENSHOT VERIFICATION!* ✅\n\n"
             f"👤 *USER:* {first_name} ({username_str})\n"
             f"🆔 *USER ID:* `{user_id}`\n"
+            f"🌐 *PLATFORM:* {platform.upper()}\n"
             f"⏱ *PLAN:* {duration}\n"
             f"💵 *AMOUNT:* ₹{amount}"
         )
@@ -1330,6 +1435,7 @@ def admin_approval_callback(call):
         return
 
     user_id = row["user_id"]
+    platform = row.get("platform", "android")
     duration = row["duration"]
     status = row["status"]
 
@@ -1346,7 +1452,7 @@ def admin_approval_callback(call):
         u_uname = "NO USERNAME"
 
     if action == "yes":
-        key_row = keys_collection.find_one({"duration": duration, "status": "unused"}, {"id": 1, "license_key": 1})
+        key_row = keys_collection.find_one({"platform": platform, "duration": duration, "status": "unused"}, {"id": 1, "license_key": 1})
         if not key_row:
             bot.answer_callback_query(call.id, "❌ OUT OF STOCK!", show_alert=True)
             return
@@ -1385,9 +1491,9 @@ def admin_approval_callback(call):
         try:
             bot.send_message(
                 user_id,
-                f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!* ✅\n\n• *PLAN:* {duration}\n• *YOUR LICENSE KEY:*\n`{license_key}`",
+                f"🎉 *PAYMENT VERIFIED & APPROVED BY ADMIN!* ✅\n\n• *PLATFORM:* {platform.upper()}\n• *PLAN:* {duration}\n• *YOUR LICENSE KEY:*\n`{license_key}`",
                 parse_mode="Markdown",
-                reply_markup=get_main_reply_keyboard(user_id),
+                reply_markup=get_platform_keyboard(user_id),
             )
         except Exception:
             pass
@@ -1411,7 +1517,7 @@ def admin_approval_callback(call):
                 user_id,
                 "Madarchod payment kar fir screen shot de",
                 parse_mode="Markdown",
-                reply_markup=get_main_reply_keyboard(user_id),
+                reply_markup=get_platform_keyboard(user_id),
             )
         except Exception:
             pass
@@ -1428,7 +1534,7 @@ def handle_cancel_button(message):
         return
 
     if user_id not in user_states:
-        bot.send_message(message.chat.id, "❌ ACTION CANCELLED.", reply_markup=get_main_reply_keyboard(user_id))
+        bot.send_message(message.chat.id, "❌ ACTION CANCELLED.", reply_markup=get_platform_keyboard(user_id))
         return
 
     state = user_states[user_id]
@@ -1443,7 +1549,7 @@ def handle_cancel_button(message):
     orders_collection.delete_one({"id": order_id})
     del user_states[user_id]
 
-    bot.send_message(message.chat.id, "❌ PAYMENT CANCELLED SUCCESSFULLY.", reply_markup=get_main_reply_keyboard(user_id))
+    bot.send_message(message.chat.id, "❌ PAYMENT CANCELLED SUCCESSFULLY.", reply_markup=get_platform_keyboard(user_id))
 
 
 # ============================================================
@@ -1503,7 +1609,6 @@ def handle_admin_reply(message):
 
     admin_text = (message.text or "").strip().lower()
 
-    # If admin replies with "block", block the user
     if admin_text == "block":
         try:
             blocked_collection.update_one(
@@ -1516,10 +1621,9 @@ def handle_admin_reply(message):
             bot.reply_to(message, f"❌ Failed to block user: `{e}`", parse_mode="Markdown")
         return
 
-    # Regular message copy/reply to user
+    # Successfully copy message to user silently (No success message popup/notification)
     try:
         bot.copy_message(chat_id=target_user_id, from_chat_id=message.chat.id, message_id=message.id)
-        bot.reply_to(message, "✅ Message Sent Successfully", parse_mode="Markdown")
     except Exception as e:
         bot.reply_to(message, "❌ Message Not Sent", parse_mode="Markdown")
 
