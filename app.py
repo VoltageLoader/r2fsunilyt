@@ -128,7 +128,7 @@ def parse_duration_seconds(duration_str):
             return num * 86400
     except Exception:
         pass
-    return 86400  # Default 1 day
+    return 86400
 
 
 # ============================================================
@@ -137,7 +137,7 @@ def parse_duration_seconds(duration_str):
 
 user_states = {}
 admin_reply_map = {}
-user_last_notif = {}  # Tracks last time user info header was sent to admin (24 hr limit)
+user_last_notif = {}
 
 
 # ============================================================
@@ -151,7 +151,7 @@ def is_blocked(user_id):
 
 
 # ============================================================
-# HELPER: FORWARD MESSAGE TO ADMIN (ONCE PER 24 HR INFO HEADER)
+# HELPER: FORWARD MESSAGE TO ADMIN
 # ============================================================
 
 def forward_message_to_admin(message):
@@ -187,45 +187,31 @@ def forward_message_to_admin(message):
 # BACKGROUND WORKER
 # ============================================================
 
-def send_timeout_failed_message(
-    chat_id,
-    user_id,
-    order_id
-):
+def send_timeout_failed_message(chat_id, user_id, order_id):
     time.sleep(300)
-
     try:
-        row = orders_collection.find_one(
-            {"id": order_id},
-            {"status": 1}
-        )
-
+        row = orders_collection.find_one({"id": order_id}, {"status": 1})
         if row and row.get("status") in ["pending", "pending_admin"]:
             try:
                 bot.send_message(
                     chat_id,
-                    "⏳ *PAYMENT TIME EXPIRED!*\n"
-                    "❌ *APPROVAL REQUEST CLOSED.*\n"
+                    "⏳ *PAYMENT TIME EXPIRED!*\n❌ *APPROVAL REQUEST CLOSED.*\n"
                     f"📩 *TRY AGAIN — CONTACT:* @{OWNER_USERNAME} ✅",
                     parse_mode="Markdown",
                     reply_markup=get_platform_keyboard(user_id),
                 )
             except Exception:
                 pass
-
     except Exception as e:
         print(f"TIMEOUT WORKER ERROR: {e}")
 
 
 # ============================================================
-# KEYBOARDS (REPLY KEYBOARDS)
+# KEYBOARDS (COMPACT & UNIQUE)
 # ============================================================
 
 def get_platform_keyboard(user_id=None):
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("🤖 ANDROID"),
         types.KeyboardButton("🍏 iOS")
@@ -235,25 +221,18 @@ def get_platform_keyboard(user_id=None):
             types.KeyboardButton("👑 SUPER ADMIN"),
             types.KeyboardButton("📢 BROADCAST")
         )
-    markup.add(
-        types.KeyboardButton("💬 CONTACT SUPPORT")
-    )
+    markup.add(types.KeyboardButton("💬 CONTACT SUPPORT"))
     return markup
 
 
 def get_android_main_keyboard(user_id=None):
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("🛒 PURCHASE KEY"),
         types.KeyboardButton("🔐 MY KEYS")
     )
     if user_id == ADMIN_ID:
-        markup.add(
-            types.KeyboardButton("🔑 GENERATE KEY")
-        )
+        markup.add(types.KeyboardButton("🔑 GENERATE KEY"))
     markup.add(
         types.KeyboardButton("♻️ APK & SETUP"),
         types.KeyboardButton("🔙 BACK")
@@ -262,10 +241,7 @@ def get_android_main_keyboard(user_id=None):
 
 
 def get_ios_main_keyboard(user_id=None):
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("🛒 PURCHASE KEY (iOS)"),
         types.KeyboardButton("🔐 MY KEYS")
@@ -278,10 +254,7 @@ def get_ios_main_keyboard(user_id=None):
 
 
 def get_super_admin_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("⚡ QR CODE MANAGER"),
         types.KeyboardButton("📂 ANDROID MANAGER")
@@ -294,40 +267,33 @@ def get_super_admin_reply_keyboard():
 
 
 def get_android_manager_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        types.KeyboardButton("📂 ADD / UPDATE ANDROID APK"),
-        types.KeyboardButton("📺 ADD / UPDATE ANDROID SETUP VIDEO"),
-        types.KeyboardButton("🔑 ADD ANDROID KEYS (SINGLE & BULK)"),
-        types.KeyboardButton("🪣 DELETE ANDROID KEYS"),
+        types.KeyboardButton("📂 APK"),
+        types.KeyboardButton("📺 Video"),
+        types.KeyboardButton("🔑 Add Keys"),
+        types.KeyboardButton("🪣 Del Keys"),
+        types.KeyboardButton("📦 Stock"),
         types.KeyboardButton("🔙 BACK")
     )
     return markup
 
 
 def get_ios_manager_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        types.KeyboardButton("📥 ADD / UPDATE iOS DOWNLOAD LINK"),
-        types.KeyboardButton("📺 ADD / UPDATE iOS SETUP VIDEO"),
-        types.KeyboardButton("🔑 ADD iOS KEYS (SINGLE & BULK)"),
-        types.KeyboardButton("🪣 DELETE iOS KEYS"),
+        types.KeyboardButton("📥 iOS Link"),
+        types.KeyboardButton("📺 iOS Video"),
+        types.KeyboardButton("🔑 Add iOS Keys"),
+        types.KeyboardButton("🪣 Del iOS Keys"),
+        types.KeyboardButton("📦 iOS Stock"),
         types.KeyboardButton("🔙 BACK")
     )
     return markup
 
 
 def get_qr_manager_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("🖼️ CHANGE UPI QR"),
         types.KeyboardButton("🎨 GENERATE CUSTOM QR"),
@@ -337,10 +303,7 @@ def get_qr_manager_reply_keyboard():
 
 
 def get_android_loader_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("⚙️ VOLTAGE LOADER"),
         types.KeyboardButton("🚀 VIP LOADER"),
@@ -352,10 +315,7 @@ def get_android_loader_reply_keyboard():
 
 
 def get_ios_loader_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     markup.add(
         types.KeyboardButton("🍏 WIN iOS"),
         types.KeyboardButton("👑 KING iOS"),
@@ -365,10 +325,7 @@ def get_ios_loader_reply_keyboard():
 
 
 def get_delete_options_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     markup.add(
         types.KeyboardButton("🗑️ DELETE SINGLE KEY"),
         types.KeyboardButton("🗑️ DELETE ALL KEYS"),
@@ -378,10 +335,7 @@ def get_delete_options_reply_keyboard():
 
 
 def get_android_durations_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
     markup.add(
         types.KeyboardButton("⏱ 5 Hour"),
         types.KeyboardButton("⏱ 1 Day"),
@@ -395,10 +349,7 @@ def get_android_durations_reply_keyboard():
 
 
 def get_ios_durations_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("⏱ 1 Day"),
         types.KeyboardButton("⏱ 7 Day"),
@@ -409,10 +360,7 @@ def get_ios_durations_reply_keyboard():
 
 
 def get_key_method_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     markup.add(
         types.KeyboardButton("➕ ADD SINGLE KEY"),
         types.KeyboardButton("📦 ADD BULK KEYS"),
@@ -422,10 +370,7 @@ def get_key_method_reply_keyboard():
 
 
 def get_support_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=2
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("📞 CONTACT OWNER"),
         types.KeyboardButton("🔚 BACK")
@@ -434,24 +379,14 @@ def get_support_reply_keyboard():
 
 
 def get_back_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
-    markup.add(
-        types.KeyboardButton("🔚 BACK")
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    markup.add(types.KeyboardButton("🔚 BACK"))
     return markup
 
 
 def get_payment_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(
-        resize_keyboard=True,
-        row_width=1
-    )
-    markup.add(
-        types.KeyboardButton("❌ ORDER CANCEL")
-    )
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+    markup.add(types.KeyboardButton("❌ ORDER CANCEL"))
     return markup
 
 
@@ -479,17 +414,11 @@ def send_welcome(message):
         "✨ *SAFE, FAST & SECURE SERVICES* 🛡️\n\n"
         "👉 *APNA PLATFORM SELECT KAREIN:* 👇"
     )
-
-    bot.send_message(
-        message.chat.id,
-        welcome_text,
-        parse_mode="Markdown",
-        reply_markup=get_platform_keyboard(user_id),
-    )
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=get_platform_keyboard(user_id))
 
 
 # ============================================================
-# PLATFORM SELECTION & BACK BUTTONS (SILENT & CLEAN)
+# PLATFORM SELECTION & BACK BUTTONS
 # ============================================================
 
 @bot.message_handler(func=lambda message: message.text in ["🔙 BACK", "🔚 BACK"])
@@ -503,27 +432,27 @@ def handle_platform_back(message):
         st_type = state.get("type")
         if st_type in ["waiting_upi_qr_photo", "waiting_custom_qr_amount"]:
             user_states[ADMIN_ID] = {"type": "qr_manager"}
-            bot.send_message(message.chat.id, "⚡ *QR CODE MANAGER*", parse_mode="Markdown", reply_markup=get_qr_manager_reply_keyboard())
+            bot.send_message(message.chat.id, "⚡ *QR CODE MANAGER*:", parse_mode="Markdown", reply_markup=get_qr_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur"]:
+        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur", "view_stock_select_dur"]:
             user_states[ADMIN_ID] = {"type": "android_manager"}
-            bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
+            bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur"]:
+        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur", "ios_view_stock_select_dur"]:
             user_states[ADMIN_ID] = {"type": "ios_manager"}
-            bot.send_message(message.chat.id, "🍏 *iOS MANAGER*", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
+            bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
             return
         elif st_type in ["waiting_single_key", "waiting_bulk_keys", "waiting_key_method", "waiting_select_android_key_dur"]:
             user_states[ADMIN_ID] = {"type": "android_manager"}
-            bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
+            bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
             return
         elif st_type in ["waiting_select_ios_key_dur"]:
             user_states[ADMIN_ID] = {"type": "ios_manager"}
-            bot.send_message(message.chat.id, "🍏 *iOS MANAGER*", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
+            bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
             return
         elif st_type in ["qr_manager", "android_manager", "ios_manager"]:
             del user_states[ADMIN_ID]
-            bot.send_message(message.chat.id, "👑 *SUPER ADMIN PANEL*", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+            bot.send_message(message.chat.id, "👑 *SUPER ADMIN PANEL*:", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
             return
 
     if user_id in user_states:
@@ -534,12 +463,7 @@ def handle_platform_back(message):
                 pass
         del user_states[user_id]
 
-    bot.send_message(
-        message.chat.id,
-        "👉 *APNA PLATFORM SELECT KAREIN:*",
-        parse_mode="Markdown",
-        reply_markup=get_platform_keyboard(user_id),
-    )
+    bot.send_message(message.chat.id, "👉 *APNA PLATFORM SELECT KAREIN:*", parse_mode="Markdown", reply_markup=get_platform_keyboard(user_id))
 
 
 @bot.message_handler(func=lambda message: message.text == "🤖 ANDROID")
@@ -547,12 +471,7 @@ def handle_android_platform(message):
     user_id = message.from_user.id
     if is_blocked(user_id):
         return
-    bot.send_message(
-        message.chat.id,
-        "🤖 *ANDROID SECTION:*",
-        parse_mode="Markdown",
-        reply_markup=get_android_main_keyboard(user_id),
-    )
+    bot.send_message(message.chat.id, "🤖 *ANDROID SECTION:*", parse_mode="Markdown", reply_markup=get_android_main_keyboard(user_id))
 
 
 @bot.message_handler(func=lambda message: message.text == "🍏 iOS")
@@ -560,12 +479,7 @@ def handle_ios_platform(message):
     user_id = message.from_user.id
     if is_blocked(user_id):
         return
-    bot.send_message(
-        message.chat.id,
-        "🍏 *iOS SECTION:*",
-        parse_mode="Markdown",
-        reply_markup=get_ios_main_keyboard(user_id),
-    )
+    bot.send_message(message.chat.id, "🍏 *iOS SECTION:*", parse_mode="Markdown", reply_markup=get_ios_main_keyboard(user_id))
 
 
 # ============================================================
@@ -575,12 +489,7 @@ def handle_ios_platform(message):
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📢 BROADCAST")
 def broadcast_prompt(message):
     user_states[ADMIN_ID] = {"type": "waiting_broadcast_message"}
-    bot.send_message(
-        message.chat.id,
-        "📢 *BROADCAST MESSAGE*\n\n💬 Jo message sabhi users ko bhejna hai, woh yahan send karein:",
-        parse_mode="Markdown",
-        reply_markup=get_back_reply_keyboard()
-    )
+    bot.send_message(message.chat.id, "📢 *BROADCAST MESSAGE*\n\n💬 Jo message sabhi users ko bhejna hai, woh yahan send karein:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
 
 
 # ============================================================
@@ -597,19 +506,9 @@ def handle_gen_key_menu(message):
     durations = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
     for d in durations:
         cb_val = d.replace(" ", "_")
-        markup.add(
-            types.InlineKeyboardButton(
-                f"⏱ {d.upper()}",
-                callback_data=f"genkey_android_{cb_val}"
-            )
-        )
+        markup.add(types.InlineKeyboardButton(f"⏱ {d.upper()}", callback_data=f"genkey_android_{cb_val}"))
 
-    bot.send_message(
-        message.chat.id,
-        "🔑 *GENERATE ANDROID KEY*\n\nDURATION SELECT KAREIN:",
-        parse_mode="Markdown",
-        reply_markup=markup,
-    )
+    bot.send_message(message.chat.id, "🔑 *GENERATE ANDROID KEY*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("genkey_"))
@@ -627,13 +526,7 @@ def handle_genkey_callback(call):
     query_filter = {"platform": platform, "duration": duration, "status": "unused"}
     key_row = keys_collection.find_one_and_update(
         query_filter,
-        {
-            "$set": {
-                "status": "used",
-                "assigned_to": user_id,
-                "assigned_at": time.time()
-            }
-        },
+        {"$set": {"status": "used", "assigned_to": user_id, "assigned_at": time.time()}},
         return_document=True
     )
 
@@ -664,46 +557,25 @@ def super_admin_panel(message):
     if message.from_user.id != ADMIN_ID:
         bot.reply_to(message, "❌ YOU ARE NOT AUTHORIZED!")
         return
-
-    bot.send_message(
-        message.chat.id,
-        "👑 *SUPER ADMIN PANEL*:\n\nNICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:",
-        parse_mode="Markdown",
-        reply_markup=get_super_admin_reply_keyboard(),
-    )
+    bot.send_message(message.chat.id, "👑 *SUPER ADMIN PANEL*:\n\nNICHE DIYE GAYE OPTIONS MEIN SE SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "⚡ QR CODE MANAGER")
 def sa_qr_manager_handler(message):
     user_states[ADMIN_ID] = {"type": "qr_manager"}
-    bot.send_message(
-        message.chat.id,
-        "⚡ *QR CODE MANAGER*:",
-        parse_mode="Markdown",
-        reply_markup=get_qr_manager_reply_keyboard(),
-    )
+    bot.send_message(message.chat.id, "⚡ *QR CODE MANAGER*:", parse_mode="Markdown", reply_markup=get_qr_manager_reply_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "📂 ANDROID MANAGER")
 def sa_android_manager_handler(message):
     user_states[ADMIN_ID] = {"type": "android_manager"}
-    bot.send_message(
-        message.chat.id,
-        "📂 *ANDROID MANAGER*:",
-        parse_mode="Markdown",
-        reply_markup=get_android_manager_reply_keyboard(),
-    )
+    bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
 
 
 @bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text == "🍏 iOS MANAGER")
 def sa_ios_manager_handler(message):
     user_states[ADMIN_ID] = {"type": "ios_manager"}
-    bot.send_message(
-        message.chat.id,
-        "🍏 *iOS MANAGER*:",
-        parse_mode="Markdown",
-        reply_markup=get_ios_manager_reply_keyboard(),
-    )
+    bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
 
 
 # ============================================================
@@ -736,36 +608,71 @@ def handle_admin_state_input(message):
         return
 
     if action_type == "android_manager":
-        if text == "📂 ADD / UPDATE ANDROID APK":
+        if text == "📂 APK":
             user_states[ADMIN_ID] = {"type": "waiting_select_apk_loader"}
             bot.send_message(message.chat.id, "📂 *SELECT ANDROID LOADER TO UPLOAD APK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
-        elif text == "📺 ADD / UPDATE ANDROID SETUP VIDEO":
+        elif text == "📺 Video":
             user_states[ADMIN_ID] = {"type": "waiting_select_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
-        elif text == "🔑 ADD ANDROID KEYS (SINGLE & BULK)":
+        elif text == "🔑 Add Keys":
             user_states[ADMIN_ID] = {"type": "waiting_select_android_key_dur", "platform": "android"}
             bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
-        elif text == "🪣 DELETE ANDROID KEYS":
+        elif text == "🪣 Del Keys":
             user_states[ADMIN_ID] = {"type": "delete_menu_choice", "platform": "android"}
             bot.send_message(message.chat.id, "🪣 *DELETE ANDROID KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_delete_options_reply_keyboard())
+        elif text == "📦 Stock":
+            user_states[ADMIN_ID] = {"type": "view_stock_select_dur", "platform": "android"}
+            bot.send_message(message.chat.id, "📦 *ANDROID STOCK CHECK*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
         return
 
     if action_type == "ios_manager":
-        if text == "📥 ADD / UPDATE iOS DOWNLOAD LINK":
+        if text == "📥 iOS Link":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_link_loader"}
             bot.send_message(message.chat.id, "📥 *SELECT iOS LOADER FOR DOWNLOAD LINK:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
-        elif text == "📺 ADD / UPDATE iOS SETUP VIDEO":
+        elif text == "📺 iOS Video":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT iOS LOADER FOR SETUP VIDEO:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
-        elif text == "🔑 ADD iOS KEYS (SINGLE & BULK)":
+        elif text == "🔑 Add iOS Keys":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_key_dur", "platform": "ios"}
             bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
-        elif text == "🪣 DELETE iOS KEYS":
+        elif text == "🪣 Del iOS Keys":
             user_states[ADMIN_ID] = {"type": "ios_delete_menu_choice", "platform": "ios"}
-            bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_delete_options_reply_keyboard())
+            bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
+        elif text == "📦 iOS Stock":
+            user_states[ADMIN_ID] = {"type": "ios_view_stock_select_dur", "platform": "ios"}
+            bot.send_message(message.chat.id, "📦 *iOS STOCK CHECK*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
         return
 
-    # Delete Menu Choice (Single vs All) for Android/iOS
+    # View Stock Handler (Android & iOS)
+    if action_type in ["view_stock_select_dur", "ios_view_stock_select_dur"]:
+        if text.startswith("⏱ "):
+            dur = text.replace("⏱ ", "")
+            platform = state["platform"]
+            del user_states[ADMIN_ID]
+
+            unused_keys = list(keys_collection.find({"platform": platform, "duration": dur, "status": "unused"}, {"license_key": 1}))
+            total_count = len(unused_keys)
+
+            if total_count == 0:
+                bot.send_message(message.chat.id, f"❌ *NO STOCK AVAILABLE!*\n\n• Platform: `{platform.upper()}`\n• Duration: `{dur}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+                return
+
+            keys_text_list = []
+            for idx, k_doc in enumerate(unused_keys, 1):
+                keys_text_list.append(f"{idx}. `{k_doc['license_key']}`")
+
+            chunk_size = 30
+            for i in range(0, total_count, chunk_size):
+                chunk = keys_text_list[i:i+chunk_size]
+                chunk_str = "\n".join(chunk)
+                msg_content = (
+                    f"📦 *STOCK LIST ({platform.upper()})*\n"
+                    f"⏱ *DURATION:* `{dur}` | *TOTAL:* `{total_count}`\n\n"
+                    f"{chunk_str}"
+                )
+                bot.send_message(message.chat.id, msg_content, parse_mode="Markdown")
+            return
+
     if action_type in ["delete_menu_choice", "ios_delete_menu_choice"]:
         platform = state["platform"]
         if text == "🗑️ DELETE SINGLE KEY":
@@ -783,7 +690,6 @@ def handle_admin_state_input(message):
                 bot.send_message(message.chat.id, "🗑️ *DELETE ALL KEYS (iOS)*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
         return
 
-    # Handling Single Key Deletion by text
     if action_type in ["waiting_delete_single_key", "waiting_ios_delete_single_key"]:
         platform = state["platform"]
         res = keys_collection.delete_one({"platform": platform, "license_key": text})
@@ -794,7 +700,6 @@ def handle_admin_state_input(message):
         del user_states[ADMIN_ID]
         return
 
-    # Handling Delete All Keys by selected duration set
     if action_type in ["waiting_delete_all_select_dur", "waiting_ios_delete_all_select_dur"]:
         if text.startswith("⏱ "):
             dur = text.replace("⏱ ", "")
@@ -804,7 +709,6 @@ def handle_admin_state_input(message):
             del user_states[ADMIN_ID]
         return
 
-    # Loader selection for Android APK/Video
     if action_type in ["waiting_select_apk_loader", "waiting_select_video_loader"]:
         loader_map = {
             "⚙️ VOLTAGE LOADER": "voltage_loader",
@@ -822,7 +726,6 @@ def handle_admin_state_input(message):
                 bot.send_message(message.chat.id, f"📺 *ADD SETUP VIDEO LINK FOR {text}*\n\n💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
         return
 
-    # Loader selection for iOS Link/Video
     if action_type in ["waiting_select_ios_link_loader", "waiting_select_ios_video_loader"]:
         ios_map = {
             "🍏 WIN iOS": "win_ios",
@@ -838,7 +741,6 @@ def handle_admin_state_input(message):
                 bot.send_message(message.chat.id, f"📺 *ADD SETUP VIDEO LINK FOR {text}*\n\n💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
         return
 
-    # Duration selection for adding keys
     if action_type in ["waiting_select_android_key_dur", "waiting_select_ios_key_dur"]:
         if text.startswith("⏱ "):
             dur = text.replace("⏱ ", "")
@@ -847,7 +749,6 @@ def handle_admin_state_input(message):
             bot.send_message(message.chat.id, f"⏱ PLATFORM: *{platform.upper()}* | DURATION: *{dur}*\n\nKAUNSA METHOD USE KARNA HAI SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_key_method_reply_keyboard())
         return
 
-    # Key method selection (Single / Bulk)
     if action_type == "waiting_key_method":
         platform = state["platform"]
         duration = state["duration"]
@@ -890,10 +791,7 @@ def handle_admin_state_input(message):
                 fail_count += 1
 
         bot.edit_message_text(
-            f"✅ *BROADCAST COMPLETED!*\n\n"
-            f"• *Total Users:* `{total_users}`\n"
-            f"• *Successfully Sent:* `{sent_count}`\n"
-            f"• *Failed / Blocked:* `{fail_count}`",
+            f"✅ *BROADCAST COMPLETED!*\n\n• *Total Users:* `{total_users}`\n• *Successfully Sent:* `{sent_count}`\n• *Failed / Blocked:* `{fail_count}`",
             chat_id=message.chat.id,
             message_id=status_msg.message_id,
             parse_mode="Markdown"
@@ -1003,28 +901,6 @@ def handle_admin_state_input(message):
 
         del user_states[user_id]
         bot.reply_to(message, f"📦 *BULK KEYS REPORT ({platform.upper()})*\n\n• *DURATION:* {duration}\n• *ADDED:* `{added_count}`\n• *DUPLICATES SKIPPED:* `{duplicate_count}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
-
-
-# ============================================================
-# SUPER ADMIN DELETE CALLBACK HANDLER
-# ============================================================
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("sa_del_id_"))
-def super_admin_delete_callback(call):
-    if call.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(call.id, "❌ UNAUTHORIZED!", show_alert=True)
-        return
-
-    kid = int(call.data.split("_")[3])
-    result = keys_collection.delete_one({"id": kid})
-    bot.answer_callback_query(call.id, f"✅ KEY SUCCESSFULLY DELETED!", show_alert=True)
-    try:
-        if result.deleted_count:
-            bot.edit_message_text(f"✅ *KEY SUCCESSFULLY DELETED!*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-        else:
-            bot.edit_message_text(f"❌ *KEY ALREADY DELETED!*", call.message.chat.id, call.message.message_id, parse_mode="Markdown")
-    except Exception:
-        pass
 
 
 # ============================================================
@@ -1320,7 +1196,7 @@ def handle_plan(call):
 
     bot.answer_callback_query(call.id)
     parts = call.data.split("_")
-    platform = parts[1] # android or ios
+    platform = parts[1]
     amount = int(parts[-1])
     duration = "_".join(parts[2:-1]).replace("_", " ")
     current_time = time.time()
@@ -1602,7 +1478,7 @@ def handle_cancel_button(message):
 
 
 # ============================================================
-# RESET KEY (CLEAN SENT TO ADMIN)
+# RESET KEY
 # ============================================================
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("reset_"))
@@ -1616,7 +1492,6 @@ def handle_reset_key(call):
 
     bot.answer_callback_query(call.id, "🔄 RESET REQUEST SENT TO ADMIN SUCCESSFULLY! ✅", show_alert=True)
     
-    # Clean message sent to admin containing ONLY the key and request note for easy copying
     reset_msg = (
         f"`{license_key}`\n"
         f"♻️ *RESET REQUEST*"
