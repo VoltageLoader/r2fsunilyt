@@ -269,10 +269,10 @@ def get_super_admin_reply_keyboard():
 def get_android_manager_reply_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        types.KeyboardButton("📂 APK"),
-        types.KeyboardButton("📺 Video"),
-        types.KeyboardButton("🔑 Add Keys"),
-        types.KeyboardButton("🪣 Del Keys"),
+        types.KeyboardButton("Upload APK"),
+        types.KeyboardButton("Video Set-Up"),
+        types.KeyboardButton("Add Key"),
+        types.KeyboardButton("Delete Key"),
         types.KeyboardButton("📦 Stock"),
         types.KeyboardButton("🔙 BACK")
     )
@@ -282,10 +282,10 @@ def get_android_manager_reply_keyboard():
 def get_ios_manager_reply_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
-        types.KeyboardButton("📥 iOS Link"),
-        types.KeyboardButton("📺 iOS Video"),
-        types.KeyboardButton("🔑 Add iOS Keys"),
-        types.KeyboardButton("🪣 Del iOS Keys"),
+        types.KeyboardButton("Upload APK"),
+        types.KeyboardButton("Video Set-Up"),
+        types.KeyboardButton("Add Key"),
+        types.KeyboardButton("Delete Key"),
         types.KeyboardButton("📦 iOS Stock"),
         types.KeyboardButton("🔙 BACK")
     )
@@ -442,13 +442,14 @@ def handle_platform_back(message):
             user_states[ADMIN_ID] = {"type": "ios_manager"}
             bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_single_key", "waiting_bulk_keys", "waiting_key_method", "waiting_select_android_key_dur"]:
-            user_states[ADMIN_ID] = {"type": "android_manager"}
-            bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
-            return
-        elif st_type in ["waiting_select_ios_key_dur"]:
-            user_states[ADMIN_ID] = {"type": "ios_manager"}
-            bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
+        elif st_type in ["waiting_single_key", "waiting_bulk_keys", "waiting_key_method", "waiting_select_android_key_dur", "waiting_select_ios_key_dur"]:
+            platform = state.get("platform", "android")
+            if platform == "ios":
+                user_states[ADMIN_ID] = {"type": "ios_manager"}
+                bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
+            else:
+                user_states[ADMIN_ID] = {"type": "android_manager"}
+                bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
             return
         elif st_type in ["qr_manager", "android_manager", "ios_manager"]:
             del user_states[ADMIN_ID]
@@ -608,16 +609,16 @@ def handle_admin_state_input(message):
         return
 
     if action_type == "android_manager":
-        if text == "📂 APK":
+        if text == "Upload APK":
             user_states[ADMIN_ID] = {"type": "waiting_select_apk_loader"}
             bot.send_message(message.chat.id, "📂 *SELECT ANDROID LOADER TO UPLOAD APK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
-        elif text == "📺 Video":
+        elif text == "Video Set-Up":
             user_states[ADMIN_ID] = {"type": "waiting_select_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
-        elif text == "🔑 Add Keys":
+        elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_android_key_dur", "platform": "android"}
             bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
-        elif text == "🪣 Del Keys":
+        elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "delete_menu_choice", "platform": "android"}
             bot.send_message(message.chat.id, "🪣 *DELETE ANDROID KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_delete_options_reply_keyboard())
         elif text == "📦 Stock":
@@ -626,16 +627,16 @@ def handle_admin_state_input(message):
         return
 
     if action_type == "ios_manager":
-        if text == "📥 iOS Link":
+        if text == "Upload APK":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_link_loader"}
             bot.send_message(message.chat.id, "📥 *SELECT iOS LOADER FOR DOWNLOAD LINK:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
-        elif text == "📺 iOS Video":
+        elif text == "Video Set-Up":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT iOS LOADER FOR SETUP VIDEO:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
-        elif text == "🔑 Add iOS Keys":
+        elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_key_dur", "platform": "ios"}
             bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
-        elif text == "🪣 Del iOS Keys":
+        elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "ios_delete_menu_choice", "platform": "ios"}
             bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
         elif text == "📦 iOS Stock":
@@ -686,7 +687,7 @@ def handle_admin_state_input(message):
                 user_states[ADMIN_ID] = {"type": "waiting_delete_all_select_dur", "platform": "android"}
                 bot.send_message(message.chat.id, "🗑️ *DELETE ALL KEYS (ANDROID)*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
             else:
-                user_states[ADMIN_ID] = {"type": "waiting_ios_delete_all_select_dur", "platform": "ios"}
+                user_states[ADMIN_ID] = {"type": "waiting_delete_all_select_dur", "platform": "ios"}
                 bot.send_message(message.chat.id, "🗑️ *DELETE ALL KEYS (iOS)*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
         return
 
@@ -700,7 +701,7 @@ def handle_admin_state_input(message):
         del user_states[ADMIN_ID]
         return
 
-    if action_type in ["waiting_delete_all_select_dur", "waiting_ios_delete_all_select_dur"]:
+    if action_type == "waiting_delete_all_select_dur":
         if text.startswith("⏱ "):
             dur = text.replace("⏱ ", "")
             platform = state["platform"]
