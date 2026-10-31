@@ -617,7 +617,7 @@ def handle_admin_state_input(message):
             bot.send_message(message.chat.id, "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_android_key_dur", "platform": "android"}
-            bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
+            bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\n⏱ PEHLE DURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
         elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "delete_menu_choice", "platform": "android"}
             bot.send_message(message.chat.id, "🪣 *DELETE ANDROID KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_delete_options_reply_keyboard())
@@ -635,7 +635,7 @@ def handle_admin_state_input(message):
             bot.send_message(message.chat.id, "📺 *SELECT iOS LOADER FOR SETUP VIDEO:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_key_dur", "platform": "ios"}
-            bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
+            bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\n⏱ PEHLE DURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
         elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "ios_delete_menu_choice", "platform": "ios"}
             bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
@@ -894,14 +894,37 @@ def handle_admin_state_input(message):
         added_count, duplicate_count = 0, 0
         for key in lines:
             try:
+                # Check for exact 100% matching key in DB
+                existing = keys_collection.find_one({"platform": platform, "license_key": key})
+                if existing:
+                    duplicate_count += 1
+                    continue
+
                 new_id = get_next_id("keys")
-                keys_collection.insert_one({"id": new_id, "platform": platform, "duration": duration, "license_key": key, "status": "unused", "assigned_to": None})
+                keys_collection.insert_one({
+                    "id": new_id, 
+                    "platform": platform, 
+                    "duration": duration, 
+                    "license_key": key, 
+                    "status": "unused", 
+                    "assigned_to": None
+                })
                 added_count += 1
             except DuplicateKeyError:
                 duplicate_count += 1
+            except Exception:
+                pass
 
         del user_states[user_id]
-        bot.reply_to(message, f"📦 *BULK KEYS REPORT ({platform.upper()})*\n\n• *DURATION:* {duration}\n• *ADDED:* `{added_count}`\n• *DUPLICATES SKIPPED:* `{duplicate_count}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(
+            message, 
+            f"📦 *BULK KEYS REPORT ({platform.upper()})*\n\n"
+            f"• *DURATION:* {duration}\n"
+            f"• *SUCCESSFULLY ADDED:* `{added_count}`\n"
+            f"• *EXACT DUPLICATES SKIPPED:* `{duplicate_count}`", 
+            parse_mode="Markdown", 
+            reply_markup=get_super_admin_reply_keyboard()
+        )
 
 
 # ============================================================
@@ -1583,12 +1606,4 @@ if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
 
     try:
-        bot.remove_webhook()
-        bot.delete_webhook(drop_pending_updates=True)
-        bot.set_my_commands([])
-    except Exception as e:
-        print(f"WEBHOOK CLEANUP ERROR: {e}")
-
-    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
-
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        bot.remove_
