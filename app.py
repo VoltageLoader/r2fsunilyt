@@ -334,31 +334,6 @@ def get_delete_options_reply_keyboard():
     return markup
 
 
-def get_android_durations_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-    markup.add(
-        types.KeyboardButton("⏱ 5 Hour"),
-        types.KeyboardButton("⏱ 1 Day"),
-        types.KeyboardButton("⏱ 2 Day"),
-        types.KeyboardButton("⏱ 3 Day"),
-        types.KeyboardButton("⏱ 7 Day"),
-        types.KeyboardButton("⏱ 30 Day"),
-        types.KeyboardButton("🔙 BACK")
-    )
-    return markup
-
-
-def get_ios_durations_reply_keyboard():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton("⏱ 1 Day"),
-        types.KeyboardButton("⏱ 7 Day"),
-        types.KeyboardButton("⏱ 30 Day"),
-        types.KeyboardButton("🔙 BACK")
-    )
-    return markup
-
-
 def get_key_method_reply_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
     markup.add(
@@ -617,13 +592,22 @@ def handle_admin_state_input(message):
             bot.send_message(message.chat.id, "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_android_key_dur", "platform": "android"}
-            bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\n⏱ PEHLE DURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
+            # Send durations as Inline Keyboard (upper message)
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            durs = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+            for d in durs:
+                markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"admindur_android_{d.replace(' ', '_')}"))
+            bot.send_message(message.chat.id, "🔑 *ADD ANDROID KEYS*\n\n⏱ Upar diye gaye buttons mein se duration select karein:", parse_mode="Markdown", reply_markup=markup)
         elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "delete_menu_choice", "platform": "android"}
             bot.send_message(message.chat.id, "🪣 *DELETE ANDROID KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_delete_options_reply_keyboard())
         elif text == "📦 Stock":
             user_states[ADMIN_ID] = {"type": "view_stock_select_dur", "platform": "android"}
-            bot.send_message(message.chat.id, "📦 *ANDROID STOCK CHECK*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            durs = ["5 Hour", "1 Day", "2 Day", "3 Day", "7 Day", "30 Day"]
+            for d in durs:
+                markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"admstock_android_{d.replace(' ', '_')}"))
+            bot.send_message(message.chat.id, "📦 *ANDROID STOCK CHECK*\n\n⏱ Duration select karein:", parse_mode="Markdown", reply_markup=markup)
         return
 
     if action_type == "ios_manager":
@@ -635,44 +619,22 @@ def handle_admin_state_input(message):
             bot.send_message(message.chat.id, "📺 *SELECT iOS LOADER FOR SETUP VIDEO:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_key_dur", "platform": "ios"}
-            bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\n⏱ PEHLE DURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            durs = ["1 Day", "7 Day", "30 Day"]
+            for d in durs:
+                markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"admindur_ios_{d.replace(' ', '_')}"))
+            bot.send_message(message.chat.id, "🔑 *ADD iOS KEYS*\n\n⏱ Upar diye gaye buttons mein se duration select karein:", parse_mode="Markdown", reply_markup=markup)
         elif text == "Delete Key":
             user_states[ADMIN_ID] = {"type": "ios_delete_menu_choice", "platform": "ios"}
-            bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
+            bot.send_message(message.chat.id, "🪣 *DELETE iOS KEYS*\n\nOPTION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_android_durations_reply_keyboard())
         elif text == "📦 iOS Stock":
             user_states[ADMIN_ID] = {"type": "ios_view_stock_select_dur", "platform": "ios"}
-            bot.send_message(message.chat.id, "📦 *iOS STOCK CHECK*\n\nDURATION SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_ios_durations_reply_keyboard())
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            durs = ["1 Day", "7 Day", "30 Day"]
+            for d in durs:
+                markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"admstock_ios_{d.replace(' ', '_')}"))
+            bot.send_message(message.chat.id, "📦 *iOS STOCK CHECK*\n\n⏱ Duration select karein:", parse_mode="Markdown", reply_markup=markup)
         return
-
-    # View Stock Handler (Android & iOS)
-    if action_type in ["view_stock_select_dur", "ios_view_stock_select_dur"]:
-        if text.startswith("⏱ "):
-            dur = text.replace("⏱ ", "")
-            platform = state["platform"]
-            del user_states[ADMIN_ID]
-
-            unused_keys = list(keys_collection.find({"platform": platform, "duration": dur, "status": "unused"}, {"license_key": 1}))
-            total_count = len(unused_keys)
-
-            if total_count == 0:
-                bot.send_message(message.chat.id, f"❌ *NO STOCK AVAILABLE!*\n\n• Platform: `{platform.upper()}`\n• Duration: `{dur}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
-                return
-
-            keys_text_list = []
-            for idx, k_doc in enumerate(unused_keys, 1):
-                keys_text_list.append(f"{idx}. `{k_doc['license_key']}`")
-
-            chunk_size = 30
-            for i in range(0, total_count, chunk_size):
-                chunk = keys_text_list[i:i+chunk_size]
-                chunk_str = "\n".join(chunk)
-                msg_content = (
-                    f"📦 *STOCK LIST ({platform.upper()})*\n"
-                    f"⏱ *DURATION:* `{dur}` | *TOTAL:* `{total_count}`\n\n"
-                    f"{chunk_str}"
-                )
-                bot.send_message(message.chat.id, msg_content, parse_mode="Markdown")
-            return
 
     if action_type in ["delete_menu_choice", "ios_delete_menu_choice"]:
         platform = state["platform"]
@@ -695,10 +657,9 @@ def handle_admin_state_input(message):
         platform = state["platform"]
         res = keys_collection.delete_one({"platform": platform, "license_key": text})
         if res.deleted_count > 0:
-            bot.reply_to(message, f"✅ *SUCCESSFULLY DELETED KEY:* `{text}` 🗑️", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+            bot.reply_to(message, f"✅ *SUCCESSFULLY DELETED KEY:* `{text}` 🗑️", parse_mode="Markdown")
         else:
-            bot.reply_to(message, f"❌ *KEY NOT FOUND:* `{text}`\nKripya sahi key enter karein.", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
-        del user_states[ADMIN_ID]
+            bot.reply_to(message, f"❌ *KEY NOT FOUND:* `{text}`\nKripya sahi key enter karein.", parse_mode="Markdown")
         return
 
     if action_type == "waiting_delete_all_select_dur":
@@ -706,7 +667,7 @@ def handle_admin_state_input(message):
             dur = text.replace("⏱ ", "")
             platform = state["platform"]
             res = keys_collection.delete_many({"platform": platform, "duration": dur})
-            bot.send_message(message.chat.id, f"✅ *ALL KEYS DELETED SUCCESSFULLY!*\n\n• Platform: `{platform.upper()}`\n• Duration Set: `{dur}`\n• Total Deleted: `{res.deleted_count}` keys 🗑️", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+            bot.send_message(message.chat.id, f"✅ *ALL KEYS DELETED SUCCESSFULLY!*\n\n• Platform: `{platform.upper()}`\n• Duration Set: `{dur}`\n• Total Deleted: `{res.deleted_count}` keys 🗑️", parse_mode="Markdown")
             del user_states[ADMIN_ID]
         return
 
@@ -740,14 +701,6 @@ def handle_admin_state_input(message):
             else:
                 user_states[ADMIN_ID] = {"type": "waiting_ios_video_link", "loader_key": l_key}
                 bot.send_message(message.chat.id, f"📺 *ADD SETUP VIDEO LINK FOR {text}*\n\n💬 AB APNA **SETUP VIDEO LINK** YAHAN SEND KAREIN:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
-        return
-
-    if action_type in ["waiting_select_android_key_dur", "waiting_select_ios_key_dur"]:
-        if text.startswith("⏱ "):
-            dur = text.replace("⏱ ", "")
-            platform = state["platform"]
-            user_states[ADMIN_ID] = {"type": "waiting_key_method", "platform": platform, "duration": dur}
-            bot.send_message(message.chat.id, f"⏱ PLATFORM: *{platform.upper()}* | DURATION: *{dur}*\n\nKAUNSA METHOD USE KARNA HAI SELECT KAREIN:", parse_mode="Markdown", reply_markup=get_key_method_reply_keyboard())
         return
 
     if action_type == "waiting_key_method":
@@ -876,8 +829,8 @@ def handle_admin_state_input(message):
         try:
             new_id = get_next_id("keys")
             keys_collection.insert_one({"id": new_id, "platform": platform, "duration": duration, "license_key": text, "status": "unused", "assigned_to": None})
-            del user_states[user_id]
-            bot.reply_to(message, f"✅ *SINGLE KEY ADDED ({platform.upper()})!*\n\n• *DURATION:* {duration}\n• *KEY:* `{text}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+            # State delete nahi karenge taaki admin continuous keys add kar sake bina auto-back huye
+            bot.reply_to(message, f"✅ *SINGLE KEY ADDED ({platform.upper()})!*\n\n• *DURATION:* {duration}\n• *KEY:* `{text}`\n\n💬 *Aur key add karni hai toh bhejein, warna 'BACK' dabayein:*", parse_mode="Markdown")
         except DuplicateKeyError:
             bot.reply_to(message, "❌ *DUPLICATE KEY ERROR!*\nYEH LICENSE KEY PEHLE SE DATABASE MEIN MOJOOD HAI.", parse_mode="Markdown")
         except Exception:
@@ -894,7 +847,6 @@ def handle_admin_state_input(message):
         added_count, duplicate_count = 0, 0
         for key in lines:
             try:
-                # Check for exact 100% matching key in DB
                 existing = keys_collection.find_one({"platform": platform, "license_key": key})
                 if existing:
                     duplicate_count += 1
@@ -923,8 +875,65 @@ def handle_admin_state_input(message):
             f"• *SUCCESSFULLY ADDED:* `{added_count}`\n"
             f"• *EXACT DUPLICATES SKIPPED:* `{duplicate_count}`", 
             parse_mode="Markdown", 
-            reply_markup=get_super_admin_reply_keyboard()
+            reply_markup=get_android_manager_reply_keyboard() if platform == "android" else get_ios_manager_reply_keyboard()
         )
+
+
+# ============================================================
+# INLINE CALLBACKS FOR ADMIN DURATION SELECTION
+# ============================================================
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admindur_"))
+def handle_admin_duration_inline(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ UNAUTHORIZED!", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    parts = call.data.split("_")
+    platform = parts[1]
+    duration = "_".join(parts[2:]).replace("_", " ")
+
+    user_states[ADMIN_ID] = {"type": "waiting_key_method", "platform": platform, "duration": duration}
+    
+    bot.send_message(
+        call.message.chat.id,
+        f"⏱ PLATFORM: *{platform.upper()}* | DURATION: *{duration}*\n\nKAUNSA METHOD USE KARNA HAI SELECT KAREIN:",
+        parse_mode="Markdown",
+        reply_markup=get_key_method_reply_keyboard()
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admstock_"))
+def handle_admin_stock_inline(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ UNAUTHORIZED!", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    parts = call.data.split("_")
+    platform = parts[1]
+    dur = "_".join(parts[2:]).replace("_", " ")
+
+    unused_keys = list(keys_collection.find({"platform": platform, "duration": dur, "status": "unused"}, {"license_key": 1}))
+    total_count = len(unused_keys)
+
+    if total_count == 0:
+        bot.send_message(call.message.chat.id, f"❌ *NO STOCK AVAILABLE!*\n\n• Platform: `{platform.upper()}`\n• Duration: `{dur}`", parse_mode="Markdown")
+        return
+
+    keys_text_list = []
+    for idx, k_doc in enumerate(unused_keys, 1):
+        keys_text_list.append(f"{idx}. `{k_doc['license_key']}`")
+
+    chunk_size = 30
+    for i in range(0, total_count, chunk_size):
+        chunk = keys_text_list[i:i+chunk_size]
+        chunk_str = "\n".join(chunk)
+        msg_content = (
+            f"📦 *STOCK LIST ({platform.upper()})*\n"
+            f"⏱ *DURATION:* `{dur}` | *TOTAL:* `{total_count}`\n\n"
+            f"{chunk_str}"
+        )
+        bot.send_message(call.message.chat.id, msg_content, parse_mode="Markdown")
 
 
 # ============================================================
@@ -1606,4 +1615,12 @@ if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
 
     try:
-        bot.remove_
+        bot.remove_webhook()
+        bot.delete_webhook(drop_pending_updates=True)
+        bot.set_my_commands([])
+    except Exception as e:
+        print(f"WEBHOOK CLEANUP ERROR: {e}")
+
+    print("BOT IS RUNNING WITH FLASK + MONGODB ON RENDER...")
+
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
