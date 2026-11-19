@@ -156,6 +156,34 @@ def parse_duration_seconds(duration_str):
 
 
 # ============================================================
+# HELPER: SEND HOW TO BUY MP4 VIDEO
+# ============================================================
+
+def send_howtobuy_video(chat_id, platform):
+    doc_key = f"howtobuy_{platform.lower()}"
+    doc = loaders_collection.find_one({"loader_key": doc_key})
+    if not doc or "file_id" not in doc:
+        return
+    try:
+        bot.send_video(
+            chat_id,
+            video=doc["file_id"],
+            caption=f"🎬 *HOW TO BUY {platform.upper()} KEY*",
+            parse_mode="Markdown",
+        )
+    except Exception:
+        try:
+            bot.send_document(
+                chat_id,
+                document=doc["file_id"],
+                caption=f"🎬 *HOW TO BUY {platform.upper()} KEY*",
+                parse_mode="Markdown",
+            )
+        except Exception:
+            pass
+
+
+# ============================================================
 # USER STATE & TRACKING
 # ============================================================
 
@@ -295,6 +323,7 @@ def get_android_manager_reply_keyboard():
     markup.add(
         types.KeyboardButton("Upload APK"),
         types.KeyboardButton("Video Set-Up"),
+        types.KeyboardButton("Upload How To Buy"),
         types.KeyboardButton("Add Key"),
         types.KeyboardButton("Delete Key"),
         types.KeyboardButton("📦 Stock"),
@@ -308,6 +337,7 @@ def get_ios_manager_reply_keyboard():
     markup.add(
         types.KeyboardButton("Upload APK"),
         types.KeyboardButton("Video Set-Up"),
+        types.KeyboardButton("Upload How To Buy"),
         types.KeyboardButton("Add Key"),
         types.KeyboardButton("Delete Key"),
         types.KeyboardButton("📦 iOS Stock"),
@@ -477,11 +507,11 @@ def handle_platform_back(message):
             user_states[ADMIN_ID] = {"type": "qr_manager"}
             bot.send_message(message.chat.id, "⚡ *QR CODE MANAGER*:", parse_mode="Markdown", reply_markup=get_qr_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur", "view_stock_select_dur"]:
+        elif st_type in ["waiting_loader_apk", "waiting_loader_video", "waiting_howtobuy_video", "waiting_select_apk_loader", "waiting_select_video_loader", "delete_menu_choice", "waiting_delete_single_key", "waiting_delete_all_select_dur", "view_stock_select_dur"]:
             user_states[ADMIN_ID] = {"type": "android_manager"}
             bot.send_message(message.chat.id, "📂 *ANDROID MANAGER*:", parse_mode="Markdown", reply_markup=get_android_manager_reply_keyboard())
             return
-        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur", "ios_view_stock_select_dur"]:
+        elif st_type in ["waiting_ios_download_link", "waiting_ios_video_link", "waiting_ios_howtobuy_video", "waiting_select_ios_link_loader", "waiting_select_ios_video_loader", "ios_delete_menu_choice", "waiting_ios_delete_single_key", "waiting_ios_delete_all_select_dur", "ios_view_stock_select_dur"]:
             user_states[ADMIN_ID] = {"type": "ios_manager"}
             bot.send_message(message.chat.id, "🍏 *iOS MANAGER*:", parse_mode="Markdown", reply_markup=get_ios_manager_reply_keyboard())
             return
@@ -515,6 +545,7 @@ def handle_android_platform(message):
     user_id = message.from_user.id
     if is_blocked(user_id):
         return
+    send_howtobuy_video(message.chat.id, "android")
     bot.send_message(message.chat.id, "🤖 *ANDROID SECTION:*", parse_mode="Markdown", reply_markup=get_android_main_keyboard(user_id))
 
 
@@ -523,6 +554,7 @@ def handle_ios_platform(message):
     user_id = message.from_user.id
     if is_blocked(user_id):
         return
+    send_howtobuy_video(message.chat.id, "ios")
     bot.send_message(message.chat.id, "🍏 *iOS SECTION:*", parse_mode="Markdown", reply_markup=get_ios_main_keyboard(user_id))
 
 
@@ -657,6 +689,9 @@ def handle_admin_state_input(message):
         elif text == "Video Set-Up":
             user_states[ADMIN_ID] = {"type": "waiting_select_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT ANDROID LOADER FOR SETUP VIDEO LINK:*", parse_mode="Markdown", reply_markup=get_android_loader_reply_keyboard())
+        elif text == "Upload How To Buy":
+            user_states[ADMIN_ID] = {"type": "waiting_howtobuy_video", "platform": "android"}
+            bot.send_message(message.chat.id, "🎬 *UPLOAD HOW TO BUY VIDEO (ANDROID)*\n\n💬 APNA **MP4 VIDEO** YAHAN CHAT MEIN SEND KAREIN:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_android_key_dur", "platform": "android"}
             markup = types.InlineKeyboardMarkup(row_width=2)
@@ -681,6 +716,9 @@ def handle_admin_state_input(message):
         elif text == "Video Set-Up":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_video_loader"}
             bot.send_message(message.chat.id, "📺 *SELECT iOS LOADER FOR SETUP VIDEO:*", parse_mode="Markdown", reply_markup=get_ios_loader_reply_keyboard())
+        elif text == "Upload How To Buy":
+            user_states[ADMIN_ID] = {"type": "waiting_ios_howtobuy_video", "platform": "ios"}
+            bot.send_message(message.chat.id, "🎬 *UPLOAD HOW TO BUY VIDEO (iOS)*\n\n💬 APNA **MP4 VIDEO** YAHAN CHAT MEIN SEND KAREIN:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
         elif text == "Add Key":
             user_states[ADMIN_ID] = {"type": "waiting_select_ios_key_dur", "platform": "ios"}
             markup = types.InlineKeyboardMarkup(row_width=2)
@@ -696,6 +734,33 @@ def handle_admin_state_input(message):
             for d in IOS_DURATIONS:
                 markup.add(types.InlineKeyboardButton(f"⏱ {d}", callback_data=f"admstock_ios_{d.replace(' ', '_')}"))
             bot.send_message(message.chat.id, "📦 *iOS STOCK CHECK*\n\n⏱ Duration select karein:", parse_mode="Markdown", reply_markup=markup)
+        return
+
+    if action_type in ["waiting_howtobuy_video", "waiting_ios_howtobuy_video"]:
+        platform = state["platform"]
+        file_id = None
+        if message.video:
+            file_id = message.video.file_id
+        elif message.document and (message.document.file_name or "").lower().endswith(".mp4"):
+            file_id = message.document.file_id
+
+        if not file_id:
+            bot.reply_to(message, "❌ KRIPYA EK VALID **MP4 VIDEO** SEND KAREIN!")
+            return
+
+        loaders_collection.update_one(
+            {"loader_key": f"howtobuy_{platform}"},
+            {"$set": {"file_id": file_id}},
+            upsert=True
+        )
+        del user_states[user_id]
+        next_kb = get_android_manager_reply_keyboard() if platform == "android" else get_ios_manager_reply_keyboard()
+        bot.reply_to(
+            message,
+            f"✅ *HOW TO BUY VIDEO SAVED ({platform.upper()})!*",
+            parse_mode="Markdown",
+            reply_markup=next_kb
+        )
         return
 
     if action_type in ["delete_menu_choice", "ios_delete_menu_choice"]:
