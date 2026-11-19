@@ -383,6 +383,7 @@ def get_delete_options_reply_keyboard():
     markup.add(
         types.KeyboardButton("🗑️ DELETE SINGLE KEY"),
         types.KeyboardButton("🗑️ DELETE ALL KEYS"),
+        types.KeyboardButton("💥 DELETE ALL PLATFORM KEYS"),
         types.KeyboardButton("🔙 BACK")
     )
     return markup
@@ -753,49 +754,69 @@ def handle_admin_state_input(message):
             {"$set": {"file_id": file_id}},
             upsert=True
         )
-        del user_states[user_id]
-        next_kb = get_android_manager_reply_keyboard() if platform == "android" else get_ios_manager_reply_keyboard()
         bot.reply_to(
             message,
-            f"✅ *HOW TO BUY VIDEO SAVED ({platform.upper()})!*",
-            parse_mode="Markdown",
-            reply_markup=next_kb
+            f"✅ *HOW TO BUY VIDEO SAVED ({platform.upper()})!*\n\n🔙 Wapas jaane ke liye **BACK** dabayein.",
+            parse_mode="Markdown"
         )
         return
 
     if action_type in ["delete_menu_choice", "ios_delete_menu_choice"]:
         platform = state["platform"]
         if text == "🗑️ DELETE SINGLE KEY":
-            if platform == "android":
-                user_states[ADMIN_ID] = {"type": "waiting_delete_single_key", "platform": "android"}
-            else:
-                user_states[ADMIN_ID] = {"type": "waiting_ios_delete_single_key", "platform": "ios"}
-            bot.send_message(message.chat.id, f"🗑️ *DELETE SINGLE KEY ({platform.upper()})*\n\n💬 Jiss key ko delete karna hai, woh **license key** yahan send karein:", parse_mode="Markdown", reply_markup=get_back_reply_keyboard())
+            state_key = "waiting_delete_single_key" if platform == "android" else "waiting_ios_delete_single_key"
+            user_states[ADMIN_ID] = {"type": state_key, "platform": platform}
+            bot.send_message(
+                message.chat.id,
+                f"🗑️ *DELETE SINGLE KEY ({platform.upper()})*\n\n💬 Jiss key ko delete karna hai, woh **license key** yahan send karein:",
+                parse_mode="Markdown",
+                reply_markup=get_back_reply_keyboard()
+            )
         elif text == "🗑️ DELETE ALL KEYS":
-            if platform == "android":
-                user_states[ADMIN_ID] = {"type": "waiting_delete_all_select_dur", "platform": "android"}
-                bot.send_message(message.chat.id, "🗑️ *DELETE ALL KEYS (ANDROID)*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:", parse_mode="Markdown", reply_markup=get_durations_reply_keyboard(ANDROID_DURATIONS))
-            else:
-                user_states[ADMIN_ID] = {"type": "waiting_delete_all_select_dur", "platform": "ios"}
-                bot.send_message(message.chat.id, "🗑️ *DELETE ALL KEYS (iOS)*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:", parse_mode="Markdown", reply_markup=get_durations_reply_keyboard(IOS_DURATIONS))
+            user_states[ADMIN_ID] = {"type": "waiting_delete_all_select_dur", "platform": platform}
+            durations = ANDROID_DURATIONS if platform == "android" else IOS_DURATIONS
+            bot.send_message(
+                message.chat.id,
+                f"🗑️ *DELETE ALL KEYS ({platform.upper()})*\n\nDURATION SET SELECT KAREIN JISE DELETE KARNA HAI:",
+                parse_mode="Markdown",
+                reply_markup=get_durations_reply_keyboard(durations)
+            )
+        elif text == "💥 DELETE ALL PLATFORM KEYS":
+            res = keys_collection.delete_many({"platform": platform})
+            bot.send_message(
+                message.chat.id,
+                f"💥 *ALL {platform.upper()} KEYS DELETED!*\n\n• Total Deleted (All Durations): `{res.deleted_count}` keys 🗑️\n\n🔙 Wapas jaane ke liye **BACK** dabayein.",
+                parse_mode="Markdown"
+            )
         return
 
     if action_type in ["waiting_delete_single_key", "waiting_ios_delete_single_key"]:
         platform = state["platform"]
         res = keys_collection.delete_one({"platform": platform, "license_key": text})
         if res.deleted_count > 0:
-            bot.reply_to(message, f"✅ *SUCCESSFULLY DELETED KEY:* `{text}` 🗑️", parse_mode="Markdown")
+            bot.reply_to(
+                message,
+                f"✅ *SUCCESSFULLY DELETED KEY:* `{text}` 🗑️\n\nAur key delete karni hai toh bhejein, warna **BACK** dabayein.",
+                parse_mode="Markdown"
+            )
         else:
-            bot.reply_to(message, f"❌ *KEY NOT FOUND:* `{text}`\nKripya sahi key enter karein.", parse_mode="Markdown")
+            bot.reply_to(
+                message,
+                f"❌ *KEY NOT FOUND:* `{text}`\nKripya sahi key enter karein ya **BACK** dabayein.",
+                parse_mode="Markdown"
+            )
         return
 
     if action_type == "waiting_delete_all_select_dur":
+        platform = state["platform"]
         if text.startswith("⏱ ") or text.startswith("🏆 "):
             dur = text.replace("⏱ ", "").replace("🏆 ", "")
-            platform = state["platform"]
             res = keys_collection.delete_many({"platform": platform, "duration": dur})
-            bot.send_message(message.chat.id, f"✅ *ALL KEYS DELETED SUCCESSFULLY!*\n\n• Platform: `{platform.upper()}`\n• Duration Set: `{dur}`\n• Total Deleted: `{res.deleted_count}` keys 🗑️", parse_mode="Markdown")
-            del user_states[ADMIN_ID]
+            bot.send_message(
+                message.chat.id,
+                f"✅ *ALL KEYS DELETED SUCCESSFULLY!*\n\n• Platform: `{platform.upper()}`\n• Duration Set: `{dur}`\n• Total Deleted: `{res.deleted_count}` keys 🗑️\n\nKisi aur duration ko delete karna hai toh select karein, warna **BACK** dabayein.",
+                parse_mode="Markdown"
+            )
         return
 
     if action_type in ["waiting_select_apk_loader", "waiting_select_video_loader"]:
@@ -846,8 +867,6 @@ def handle_admin_state_input(message):
             handle_platform_back(message)
             return
 
-        del user_states[ADMIN_ID]
-
         users = list(users_collection.find({}, {"user_id": 1}))
         total_users = len(users)
 
@@ -872,7 +891,7 @@ def handle_admin_state_input(message):
                 fail_count += 1
 
         bot.edit_message_text(
-            f"✅ *BROADCAST COMPLETED!*\n\n• *Total Users:* `{total_users}`\n• *Successfully Sent:* `{sent_count}`\n• *Failed / Blocked:* `{fail_count}`",
+            f"✅ *BROADCAST COMPLETED!*\n\n• *Total Users:* `{total_users}`\n• *Successfully Sent:* `{sent_count}`\n• *Failed / Blocked:* `{fail_count}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.",
             chat_id=message.chat.id,
             message_id=status_msg.message_id,
             parse_mode="Markdown"
@@ -885,18 +904,16 @@ def handle_admin_state_input(message):
             return
         file_id = message.photo[-1].file_id
         loaders_collection.update_one({"loader_key": "static_upi_qr"}, {"$set": {"file_id": file_id}}, upsert=True)
-        del user_states[user_id]
-        bot.reply_to(message, "✅ *STATIC UPI QR SUCCESSFULLY SAVED!*", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(message, "✅ *STATIC UPI QR SUCCESSFULLY SAVED!*\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         return
 
     if action_type == "waiting_custom_qr_amount":
         try:
             amount = int(text)
-            del user_states[user_id]
             unique_tr = f"R2FCUST{int(time.time())}"
             upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&am={amount}.00&cu=INR&tr={unique_tr}"
             qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(upi_url)}"
-            bot.send_photo(message.chat.id, photo=qr_api_url, caption=f"🎨 *CUSTOM PAYMENT QR*\n\n• *AMOUNT:* ₹{amount}\n• *UPI ID:* `{UPI_ID}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+            bot.send_photo(message.chat.id, photo=qr_api_url, caption=f"🎨 *CUSTOM PAYMENT QR*\n\n• *AMOUNT:* ₹{amount}\n• *UPI ID:* `{UPI_ID}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         except Exception:
             bot.reply_to(message, "❌ KRIPYA SAHI AMOUNT ENTER KAREIN!")
         return
@@ -909,8 +926,7 @@ def handle_admin_state_input(message):
         file_id = message.document.file_id
         file_name = message.document.file_name or "app.apk"
         loaders_collection.update_one({"loader_key": loader_key}, {"$set": {"file_id": file_id, "file_name": file_name}}, upsert=True)
-        del user_states[user_id]
-        bot.reply_to(message, f"✅ *APK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *File Name:* `{file_name}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(message, f"✅ *APK SUCCESSFULLY SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *File Name:* `{file_name}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         return
 
     if action_type == "waiting_loader_video":
@@ -920,8 +936,7 @@ def handle_admin_state_input(message):
             bot.reply_to(message, "❌ KRIPYA VALID VIDEO LINK SEND KAREIN!")
             return
         loaders_collection.update_one({"loader_key": loader_key}, {"$set": {"video_link": video_link}}, upsert=True)
-        del user_states[user_id]
-        bot.reply_to(message, f"✅ *SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{video_link}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(message, f"✅ *SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{video_link}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         return
 
     if action_type == "waiting_ios_download_link":
@@ -931,8 +946,7 @@ def handle_admin_state_input(message):
             bot.reply_to(message, "❌ KRIPYA VALID DOWNLOAD LINK SEND KAREIN!")
             return
         loaders_collection.update_one({"loader_key": f"ios_{loader_key}"}, {"$set": {"download_link": download_link}}, upsert=True)
-        del user_states[user_id]
-        bot.reply_to(message, f"✅ *iOS DOWNLOAD LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{download_link}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(message, f"✅ *iOS DOWNLOAD LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{download_link}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         return
 
     if action_type == "waiting_ios_video_link":
@@ -942,8 +956,7 @@ def handle_admin_state_input(message):
             bot.reply_to(message, "❌ KRIPYA VALID VIDEO LINK SEND KAREIN!")
             return
         loaders_collection.update_one({"loader_key": f"ios_{loader_key}"}, {"$set": {"video_link": video_link}}, upsert=True)
-        del user_states[user_id]
-        bot.reply_to(message, f"✅ *iOS SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{video_link}`", parse_mode="Markdown", reply_markup=get_super_admin_reply_keyboard())
+        bot.reply_to(message, f"✅ *iOS SETUP VIDEO LINK SAVED FOR {loader_key.upper().replace('_', ' ')}!*\n\n• *Link:* `{video_link}`\n\n🔙 Wapas jaane ke liye **BACK** dabayein.", parse_mode="Markdown")
         return
 
     if text.startswith("/") or text in ["🤖 ANDROID", "🍏 iOS", "👑 SUPER ADMIN", "📢 BROADCAST", "💬 CONTACT SUPPORT"]:
@@ -993,15 +1006,14 @@ def handle_admin_state_input(message):
             except Exception:
                 pass
 
-        del user_states[user_id]
         bot.reply_to(
             message,
             f"📦 *BULK KEYS REPORT ({platform.upper()})*\n\n"
             f"• *DURATION:* {duration}\n"
             f"• *SUCCESSFULLY ADDED:* `{added_count}`\n"
-            f"• *EXACT DUPLICATES SKIPPED:* `{duplicate_count}`",
-            parse_mode="Markdown",
-            reply_markup=get_android_manager_reply_keyboard() if platform == "android" else get_ios_manager_reply_keyboard()
+            f"• *EXACT DUPLICATES SKIPPED:* `{duplicate_count}`\n\n"
+            f"🔙 Wapas jaane ke liye **BACK** dabayein.",
+            parse_mode="Markdown"
         )
 
 
@@ -1469,7 +1481,7 @@ def handle_user_payment_input(message):
         first_name = user_info.first_name if user_info.first_name else "USER"
 
         admin_text = (
-            f"🔔 *NEW PAYMENT SCREENSHOT VERIFICATION!*\n\n"
+            f"🔔 *NEW PAYMENT SCREENSHOT VERIFY!*\n\n"
             f"👤 *USER:* {first_name} ({username_str})\n"
             f"🆔 *USER ID:* `{user_id}`\n"
             f"🌐 *PLATFORM:* {platform.upper()}\n"
@@ -1592,7 +1604,7 @@ def admin_approval_callback(call):
         try:
             bot.send_message(
                 user_id,
-                "Madarchod payment kar fir screen shot de",
+                "Payment verify nahi hua, kripya sahi payment karein aur screenshot bhejein.",
                 parse_mode="Markdown",
                 reply_markup=get_platform_keyboard(user_id),
             )
